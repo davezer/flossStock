@@ -57,6 +57,21 @@
 		"svelte"
 	],
 	"dependencies": {
+		"cheerio": "^1.1.2",
+		"node": "^24.6.0",
+		"node-fetch": "^3.3.2",
 		"vercel": "^46.0.1"
-	}
+	},
+	"description": "Everything you need to build a Svelte library, powered by [`sv`](https://npmjs.com/package/sv).",
+	"main": "eslint.config.js",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/davezer/flossstock.git"
+	},
+	"author": "",
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/davezer/flossstock/issues"
+	},
+	"homepage": "https://github.com/davezer/flossstock#readme"
 }
