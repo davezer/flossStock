@@ -63,11 +63,11 @@
   }
 </script>
 
-<svelte:head><title>Liz O’s Floss Cabinet</title></svelte:head>
+<svelte:head><title>Liz O’s Floss Box</title></svelte:head>
 
 <div class="hero">
   <div class="title">
-    <h1>Liz O’s Floss Cabinet</h1>
+    <h1>Liz O’s Floss Box</h1>
     <p>Count. Sort. Stitch.</p>
     <div class="rainbow"></div>
   </div>

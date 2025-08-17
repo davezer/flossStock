@@ -1,34 +1,58 @@
 <script>
   import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
+  import { tabs } from '$lib/util/tabs.js';
+  import { supabase } from '$lib/supabaseClient';
+  import { authModalOpen } from '$lib/stores/authModal';
 
-  export let title = 'FlossStock';
-  export let links = [
-    { href: '/', label: 'Home' },
-    { href: '/colors', label: 'Colors' }
-  ];
+  $: user = $page.data.user;
 
-  // Normalize both the current path and hrefs so trailing slashes don’t confuse matching
-  $: pathname = ($page.url?.pathname || '/').replace(/\/+$/, '') || '/';
+  function openSignIn() {
+    authModalOpen.set(true);
+  }
 
-  const isActive = (href) => {
-    const clean = (href || '/').replace(/\/+$/, '') || '/';
-    if (clean === '/') return pathname === '/';                    // Home only on exact “/”
-    return pathname === clean || pathname.startsWith(clean + '/'); // Section and its children
-  };
+  async function signOut() {
+    await supabase.auth.signOut();
+    await invalidateAll();
+    goto('/');
+  }
+
+  let title = 'The Floss Box';
+  let links = tabs;
+
+  const normalize = (s) => (s && s !== '/' ? s.replace(/\/+$/, '') : '/');
+  $: active = normalize($page.url.pathname);
+
+
+
+  function isActive(dest) {
+    const h = normalize(dest);
+    return h === '/' ? active === '/' : active === h || active.startsWith(h + '/');
+  }
+
+  function onNav(e, dest) {
+    e.preventDefault();
+    goto(dest);
+  }
 </script>
 
 <nav class="topbar">
-  <a href="/" class="brand" aria-label={title}>🧵 {title}</a>
-  {#each links as l}
-    <a
-      href={l.href}
-      class="tab {isActive(l.href) ? 'active' : ''}"
-      aria-current={isActive(l.href) ? 'page' : undefined}
-    >
-      {l.label}
-    </a>
-  {/each}
+  <a href="/" class="brand">🧵 The Floss Box</a>
+  <a href="/" class="tab" aria-current={$page.url.pathname === '/' ? 'page' : undefined}>Home</a>
+  <a href="/colors" class="tab" aria-current={$page.url.pathname.startsWith('/colors') ? 'page' : undefined}>Colors</a>
+  <a href="/account" class="tab" aria-current={$page.url.pathname.startsWith('/account') ? 'page' : undefined}>
+    {user ? 'My stash' : 'Account'}
+  </a>
+
+  <div style="flex:1"></div>
+
+  {#if user}
+    <button class="btn" on:click={signOut}>Sign out</button>
+  {:else}
+    <button class="btn grad" on:click={openSignIn}>Sign in</button>
+  {/if}
 </nav>
+
 
 <style>
   :global(:root){ --topbar-h: 52px; }
@@ -55,4 +79,7 @@
     border-color: color-mix(in oklab, white 14%, transparent);
     opacity:1;
   }
+  .btn{ padding:.45rem .8rem; border-radius:10px; border:1px solid rgba(255,255,255,.14);
+        background:rgba(255,255,255,.03); cursor:pointer; color:inherit; }
+  .btn.grad{ background:linear-gradient(135deg,#9b5cff,#00d1ff); color:#111; border-color:transparent; }
 </style>

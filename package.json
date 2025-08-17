@@ -77,6 +77,8 @@
 		"svelte"
 	],
 	"dependencies": {
+		"@supabase/ssr": "^0.6.1",
+		"@supabase/supabase-js": "^2.55.0",
 		"@vercel/analytics": "^1.4.1",
 		"analytics": "github:vercel/analytics",
 		"cheerio": "^1.1.2",
