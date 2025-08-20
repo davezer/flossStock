@@ -1,9 +1,9 @@
 import { createServerClient } from '@supabase/ssr';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '$env/static/private';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/private';
 
 export async function load({ fetch, cookies }) {
   // Use the REAL cookies object; @supabase/ssr knows how to read/write it.
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
     cookies,
     global: { fetch }
   });
