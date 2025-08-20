@@ -75,7 +75,7 @@ async function main() {
   for (const r of rows) {
     if (!/^#([0-9A-F]{6})$/.test(r.hex)) continue;
     const key = r.code;
-    if (!seen.has(key)) {
+    if (!seen.includes(key)) {
       seen.add(key);
       clean.push(r);
     }

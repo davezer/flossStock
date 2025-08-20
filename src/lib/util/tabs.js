@@ -13,8 +13,8 @@ export const tabs = [
     },
     {
         icon: '📦',
-        label: 'Account',
-        dest: '/account',
-        key: 'account',
+        label: 'My Stash',
+        dest: '/stash',
+        key: 'stash',
     }
 ]

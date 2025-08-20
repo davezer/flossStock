@@ -1,65 +1,44 @@
 <script>
+  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import dmc from '$lib/data/dmc.json';
-  import { stash, stashSet, stashCount } from '$lib/stores/stash.js';
-  import NavBar from '$lib/components/NavBar.svelte';
   import StashGauge from '$lib/components/StashGauge.svelte';
+  import { stash, stashSet, stashCount } from '$lib/stores/stash';
 
+  export let data; // { colors }
   let q = '';
-  const total = dmc.length;
-  $: pct = Math.round(($stashCount / total) * 100);
+  let suggestions = [];
 
-  // --- Suggestions (random colors NOT in stash) ---
-  const SUGGESTION_COUNT = 12;
-  let refreshKey = 0; // bump to reshuffle
+  $: user = $page.data.user;
 
-  function shuffle(arr) {
-    const a = arr.slice();
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
+  const norm = (s) => (s || '').toString().toLowerCase().trim();
+  $: colors = data?.colors || [];
 
-  $: available = dmc.filter((c) => !$stashSet.has(String(c.code)));
-  $: suggestions = shuffle(available).slice(0, SUGGESTION_COUNT); // runs when stash or refreshKey changes
+  // filter by search
+  $: filtered = q
+    ? colors.filter((c) =>
+        norm(c.code).includes(norm(q)) ||
+        norm(c.name).includes(norm(q)) ||
+        norm(c.description).includes(norm(q)))
+    : colors;
 
+  // shuffle helpers for suggestions
   function refresh() {
-    refreshKey++; // triggers reactive block -> new shuffle
+    const arr = [...filtered];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    suggestions = arr.slice(0, 12);
   }
+  $: if (!suggestions.length) refresh(); // initial fill
 
   function addAll() {
-    for (const c of suggestions) stash.add(String(c.code));
+    if (!user) { goto('/auth?tab=login'); return; }
+    suggestions.forEach((c) => stash.add(String(c.code)));
   }
 
-   function bestMatch(query) {
-    if (!query) return null;
-    const q = String(query).trim().toLowerCase().replace(/^dmc\s+/, '');
-    // exact code match (e.g. "310", "b5200", "ecru")
-    const exact = dmc.find(c => String(c.code).toLowerCase() === q);
-    if (exact) return exact.code;
-    // starts-with code (e.g. "37" -> 3713)
-    const starts = dmc.find(c => String(c.code).toLowerCase().startsWith(q));
-    if (starts) return starts.code;
-    // name contains (e.g. "salmon")
-    const byName = dmc.find(c => c.name.toLowerCase().includes(q));
-    return byName ? byName.code : null;
-  }
-
-
- function openSearch(e) {
-    e.preventDefault();
-    const code = bestMatch(q);
-    if (code) {
-      // Pass focus param and also a hash for browsers to jump immediately
-      const hash = `#dmc-${encodeURIComponent(code)}`;
-      const params = new URLSearchParams({ focus: String(code) });
-      goto(`/colors?${params.toString()}${hash}`);
-    } else {
-      // fallback: just go to colors (no focus)
-      goto('/colors');
-    }
+  function tip(c) {
+    return `DMC ${c.code} — ${c.name}`;
   }
 </script>
 
@@ -72,48 +51,51 @@
     <div class="rainbow"></div>
   </div>
 
-  
-    <StashGauge count={$stashCount} total={dmc.length} href="/colors?stash=1" />
-  
+  {#if user}
+    <StashGauge total={colors.length} count={$stashCount} />
+    <div class="stash-actions">
+      <button on:click={() => stash.clear()} disabled={$stashCount===0}>Clear stash</button>
+    </div>
+  {:else}
+    <a class="btn grad" href="/auth?tab=login">Sign in to save colors</a>
+  {/if}
 </div>
 
-<form class="actions" on:submit={openSearch}>
-  <div class="search">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 21l-4.2-4.2m1.7-5.5a7 7 0 11-14 0 7 7 0 0114 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-    <input placeholder="Search DMC code or name…" bind:value={q} />
-  </div>
-  <button class="primary" type="submit">Search</button>
-  <a class="chip" href="/colors?stash=1" class:disabled={$stashCount===0}>View my stash</a>
-  <button class="chip danger" type="button" on:click={stash.clear} disabled={$stashCount===0}>Clear stash</button>
-</form>
+<div class="bar">
+  <input
+    placeholder="Search DMC code or name…"
+    bind:value={q}
+    aria-label="Search DMC" />
+</div>
 
-{#if $stashCount}
-  <h2 class="subhead">Recently added</h2>
-  <!-- You can keep your recent grid here if you like -->
-{/if}
-
-<!-- Suggestions -->
 <section class="suggestions">
   <header>
     <h2>Try these next</h2>
     <div class="flex">
       <button class="chip" type="button" on:click={refresh} title="Shuffle">Refresh</button>
-      <button class="chip addall" type="button" on:click={addAll} disabled={!suggestions.length}>Add all</button>
+      <button class="chip addall" type="button" on:click={addAll} disabled={!suggestions.length || !user}>Add all</button>
     </div>
   </header>
 
   <div class="grid">
     {#each suggestions as c (c.code)}
       <button
-        class="card"
-        on:click={() => stash.add(String(c.code))}
-        title={`Add DMC ${c.code} — ${c.name}`}>
+        id={`dmc-${c.code}`}
+        class="card { user && $stashSet.has(String(c.code)) ? 'in-stash' : '' }"
+        type="button"
+        on:click={() => user ? stash.toggle(String(c.code)) : goto('/auth?tab=login')}
+        aria-pressed={user && $stashSet.has(String(c.code))}
+        title={tip(c)}
+      >
         <div class="swatch" style={`--c:${c.hex}`}></div>
         <div class="meta">
           <div class="code">DMC {c.code}</div>
           <div class="name">{c.name}</div>
         </div>
-        <span class="plus" aria-hidden="true">+</span>
+
+        {#if user && $stashSet.has(String(c.code))}
+          <span class="chip-stash" aria-label="In stash">✓</span>
+        {/if}
       </button>
     {/each}
   </div>
@@ -128,6 +110,9 @@
     --accent2: #00d1ff;
     color-scheme: dark;
   }
+
+  /* hero */
+  h1 { font-size:2.2rem; margin:.25rem 0; }
   .hero {
     display: grid; grid-template-columns: 1fr auto; align-items: center;
     gap: 1.2rem; max-width: 1100px; margin: 1.2rem auto .6rem; padding: 0 1rem;
@@ -139,55 +124,25 @@
     background: linear-gradient(90deg, #ff715b, #ffcd4d, #7bd881, #4dcde0, #9b5cff, #ff71e0);
     box-shadow: 0 6px 22px rgba(155,92,255,.45);
   }
+  .stash-actions button {
+    padding:.6rem .9rem; border-radius:12px; border:1px solid var(--border);
+    background:rgba(255,255,255,.03); color:inherit; cursor:pointer;
+  }
+  .btn { padding:.6rem .9rem; border-radius:12px; border:1px solid rgba(255,255,255,.14);
+         background:rgba(255,255,255,.03); color:inherit; text-decoration:none; }
+  .btn.grad { background:linear-gradient(135deg,#9b5cff,#00d1ff); color:#111; border-color:transparent; }
 
-  .ring { position: relative; width: 110px; height: 110px; display: grid; place-items: center; }
-  .meter {
-    --p: 0;
-    width: 110px; height: 110px; border-radius: 999px;
-    background:
-      radial-gradient(closest-side, var(--bg) 76%, transparent 77% 100%),
-      conic-gradient(from -90deg,
-        var(--accent) calc(var(--p) * 1%), color-mix(in oklab, white 8%, transparent) 0);
-    box-shadow: 0 0 0 1px var(--border), inset 0 0 0 1px #0006;
+  /* search bar row */
+  .bar {
+    display:grid; grid-template-columns: 1fr; gap:.75rem;
+    align-items:center; max-width:1100px; margin:1rem auto 1.25rem; padding: 0 1rem;
   }
-  .count { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; pointer-events: none; }
-  .big { font-weight: 800; font-size: 1.6rem; line-height: 1; }
-  .label { font-size: .8rem; opacity: .75; }
+  input {
+    width:100%; padding:.9rem 1rem; border-radius:14px;
+    border:1px solid var(--border); background:#15161b; color:inherit;
+  }
 
-  .actions {
-    max-width: 1100px; margin: .2rem auto 1.2rem; padding: 0 1rem;
-    display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
-  }
-  .search {
-    flex: 1 1 420px; min-width: 260px;
-    display: grid; grid-template-columns: 36px 1fr; align-items: center;
-    border: 1px solid var(--border); border-radius: 14px; background: var(--card);
-    padding: .25rem .3rem; overflow: hidden;
-  }
-  .search svg { width: 20px; height: 20px; margin-left: .4rem; opacity: .8; }
-  .search input {
-    border: 0; outline: none; background: transparent; color: inherit;
-    padding: .55rem .6rem .55rem .2rem; font-size: 1rem;
-  }
-  .primary {
-    border: 0; cursor: pointer; border-radius: 12px; padding: .65rem .9rem; font-weight: 700;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    color: white; box-shadow: 0 10px 22px rgba(0,0,0,.25);
-    transition: transform .08s ease, filter .15s ease;
-  }
-  .primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
-  .chip {
-    display: inline-flex; align-items: center; gap: .35rem;
-    padding: .6rem .8rem; border-radius: 12px; text-decoration: none;
-    border: 1px solid var(--border); background: var(--card); color: inherit;
-  }
-  .chip.disabled, .chip[disabled] { opacity: .5; pointer-events: none; }
-  .chip.danger { border-color: color-mix(in oklab, #ff5d7a 60%, transparent); }
-  .chip.addall { border-color: color-mix(in oklab, #36c46b 60%, transparent); }
-
-  .subhead { max-width: 1100px; margin: .6rem auto .4rem; padding: 0 1rem; font-size: 1.05rem; opacity: .85; }
-
-  /* Suggestions section */
+  /* suggestions section header */
   .suggestions { max-width: 1100px; margin: 0 auto 2rem; padding: 0 1rem; }
   .suggestions header {
     display: flex; align-items: center; justify-content: space-between; gap: .6rem;
@@ -195,27 +150,65 @@
   }
   .suggestions .flex { display: flex; gap: .6rem; flex-wrap: wrap; }
 
+  .chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    padding: .6rem .8rem; border-radius: 12px; text-decoration: none;
+    border: 1px solid var(--border); background: var(--card); color: inherit;
+    cursor: pointer;
+  }
+  .chip.addall:disabled { opacity:.55; cursor:not-allowed; }
+
+  /* grid + cards — same look/behavior as /colors & /account */
   .grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .9rem;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .85rem;
   }
-  .card {
-    position: relative; display: flex; gap: .75rem; align-items: center;
-    padding: .8rem; border-radius: 12px;
-    border: 1px solid var(--border); background: var(--card);
-    cursor: pointer; text-align: left;
-    transition: transform .08s ease, box-shadow .15s ease, filter .2s ease;
+  .card{
+    position:relative;
+    display:grid; grid-template-columns:42px 1fr; align-items:center; gap:.6rem;
+    padding:.7rem .75rem;
+    border-radius:16px;
+    background: linear-gradient(180deg,
+        color-mix(in oklab, white 6%, transparent),
+        transparent 65%);
+    border:1px solid var(--border);
+    box-shadow: 0 6px 20px rgba(0,0,0,.12);
+    text-align:left; cursor:pointer;
+    transition: transform .12s ease, box-shadow .18s ease, border-color .18s ease, filter .18s ease;
+    overflow:hidden;
   }
-  .card:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,.08); }
-  .plus {
-    position: absolute; top: 6px; right: 8px; font-weight: 900;
-    background: color-mix(in oklab, CanvasText 10%, transparent);
-    color: Canvas; border-radius: 999px; padding: 0 .45rem;
+  .card::before{
+    content:"";
+    position:absolute; inset:-1px; border-radius:inherit; pointer-events:none;
+    background:
+      radial-gradient(60% 80% at 8% 0%, rgba(255,255,255,.10), transparent 40%);
+    opacity:0; transition:opacity .18s ease;
   }
-  .swatch {
-    --c: #ccc; width: 48px; height: 48px; flex: 0 0 48px;
-    border-radius: 8px; background: var(--c);
-    border: 1px solid #0000001a; box-shadow: inset 0 0 0 2px #0000000d;
+  .card:hover{
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--accent) 22%, var(--border));
+    box-shadow: 0 14px 28px rgba(0,0,0,.18);
   }
-  .meta .code { font-weight: 700; }
-  .meta .name { opacity: .85; font-size: .9rem; }
+  .card:hover::before{ opacity:1; }
+  .card:active{ transform: translateY(0); filter:brightness(.98); }
+
+  .swatch{
+    --c:#ccc;
+    width:42px; height:42px; border-radius:12px; background:var(--c);
+    border:1px solid #0000001a;
+    box-shadow:
+      inset 0 0 0 2px #0000000d,
+      inset 0 10px 20px rgba(255,255,255,.06);
+  }
+  .meta .code{ font-weight:800; font-size:.92rem; line-height:1.05;}
+  .meta .name{ opacity:.92; font-size:.86rem; line-height:1.1;}
+
+  .card{ position:relative; }
+  .chip-stash{
+    position:absolute; top:6px; right:6px;
+    width:22px; height:22px; border-radius:999px;
+    display:grid; place-items:center;
+    background:#1fc96e; color:#fff; font-weight:1000; font-size:.85rem;
+    box-shadow:0 6px 16px rgba(0,0,0,.22), inset 0 0 0 2px rgba(255,255,255,.15);
+    pointer-events:none;
+  }
 </style>

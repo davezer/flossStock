@@ -1,16 +1,21 @@
 <script>
   import { onMount, tick } from 'svelte';
+  import { page } from '$app/stores';
   import dmc from '$lib/data/dmc.json';
   import { stash, stashSet, stashCount } from '$lib/stores/stash.js';
-	import NavBar from '$lib/components/NavBar.svelte';
+  import NavBar from '$lib/components/NavBar.svelte';
 
   let q = '';
   let showOnlyStash = false;
   let focusParam = '';
 
+  // auth from +layout
+  $: user = $page.data.user;
+
   // filtering
   $: filtered = dmc.filter((c) => {
-    if (showOnlyStash && !$stashSet.has(String(c.code))) return false;
+    // When signed out, stash is effectively empty
+    if (showOnlyStash && !(user && $stashSet.has(String(c.code)))) return false;
     if (!q) return true;
     const n = q.toLowerCase();
     return (
@@ -19,6 +24,9 @@
     );
   });
   $: shownCount = filtered.length;
+
+  // Displayed stash count = 0 when signed out
+  $: displayStashCount = user ? $stashCount : 0;
 
   function tip(c) {
     return `DMC ${c.code} — ${c.name}`;
@@ -46,16 +54,18 @@
 
 <svelte:head><title>DMC Colors • Floss Cabinet</title></svelte:head>
 
-
 <!-- Page header -->
 <header class="pagehead">
   <div>
     <h1>DMC Colors</h1>
     <p class="meta">
       <strong>{shownCount}</strong> shown ·
-      <strong>{$stashCount}</strong> in stash ·
+      <strong>{displayStashCount}</strong> in stash ·
       <strong>{dmc.length}</strong> total
     </p>
+    {#if !user}
+      <p class="meta" style="opacity:.75;">You’re signed out — your stash is empty. <a href="/auth?tab=login" class="link">Sign in</a> to save colors.</p>
+    {/if}
   </div>
 </header>
 
@@ -66,13 +76,13 @@
     <input placeholder="Search name or code…" bind:value={q} />
   </div>
 
-  <label class="toggle">
-    <input type="checkbox" bind:checked={showOnlyStash} />
+  <label class="toggle" title={!user ? 'Sign in to filter by your stash' : undefined}>
+    <input type="checkbox" bind:checked={showOnlyStash} disabled={!user} />
     <span>Show my stash only</span>
   </label>
 
-  <button class="ghost danger" on:click={stash.clear} disabled={$stashCount===0}>
-    Clear stash ({$stashCount})
+  <button class="ghost danger" on:click={stash.clear} disabled={!user || $stashCount===0}>
+    Clear stash ({displayStashCount})
   </button>
 </section>
 
@@ -82,10 +92,11 @@
     {#each filtered as c (c.code)}
       <button
         id={`dmc-${c.code}`}
-        class="card { $stashSet.has(String(c.code)) ? 'in-stash' : '' }"
-        on:click={() => stash.toggle(String(c.code))}
-        aria-pressed={$stashSet.has(String(c.code))}
+        class="card { user && $stashSet.has(String(c.code)) ? 'in-stash' : '' }"
+        on:click={() => { if (user) stash.toggle(String(c.code)); }}
+        aria-pressed={user && $stashSet.has(String(c.code))}
         title={tip(c)}
+        type="button"
       >
         <div class="swatch" style={`--c:${c.hex}`}></div>
         <div class="meta">
@@ -93,7 +104,7 @@
           <div class="name">{c.name}</div>
         </div>
 
-        {#if $stashSet.has(String(c.code))}
+        {#if user && $stashSet.has(String(c.code))}
           <span class="chip-stash" aria-label="In stash">✓</span>
         {/if}
       </button>
@@ -110,8 +121,6 @@
   --accent:#9b5cff;
   color-scheme: dark;
 }
-
-
 
 /* ===== Page header ===== */
 .pagehead{

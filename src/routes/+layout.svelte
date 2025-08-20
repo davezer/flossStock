@@ -1,37 +1,48 @@
 <script>
   import { onMount } from 'svelte';
-  import { stash } from '$lib/stores/stash.js';
-  export let data; // has session from +layout.server
+  import { invalidate } from '$app/navigation';
+  import { browser } from '$app/environment';
   import NavBar from '$lib/components/NavBar.svelte';
-  import AuthModal from '$lib/components/AuthModal.svelte';
+  import { stash } from '$lib/stores/stash';
 
-  onMount(async () => {
-    if (data?.session) {
-      // fetch server stash
-      const res = await fetch('/api/stash');
-      const { codes: serverCodes } = await res.json();
+  // Provided by +layout.js: { supabase, session, user }
+  export let data;
+  let { supabase } = data;
 
-      // if client has extra codes, union -> POST
-      let localCodes = [];
-      const unsub = stash.subscribe((a) => (localCodes = a)); unsub();
+  // Track previous user to detect SSR -> CSR changes
+  let prevUserId = data.user?.id || null;
 
-      const union = Array.from(new Set([...(serverCodes || []), ...(localCodes || [])]));
-      if (union.length !== (serverCodes?.length || 0)) {
-        await fetch('/api/stash', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ codes: union })
-        });
-        // update local store to match server
-        union.forEach((c) => stash.add(c));
+  // Clear stash on auth events
+  onMount(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        stash.clear();
       }
-    }
+      invalidate('supabase:auth'); // refresh layout data
+    });
+    return () => sub.subscription.unsubscribe();
   });
+
+  // Also clear if user becomes null after a reload/navigation
+  $: if (browser) {
+    const now = data.user?.id || null;
+    if (!now && prevUserId) {
+      stash.clear();
+    }
+    prevUserId = now;
+  }
 </script>
 
-<NavBar />
+<NavBar user={data.user} />
 
-{#if data.session}
-  <div class="user-pill">Signed in</div>
-{/if}
-<slot />
-<AuthModal />
+<main>
+  <slot />
+</main>
+
+<style>
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.25rem;
+  }
+</style>

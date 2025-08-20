@@ -1,4 +1,4 @@
-import dmc from '$lib/data/dmc.json' assert { type: 'json' };
+import dmc from '$lib/data/dmc.json';
 
 export async function load({ params }) {
   const code = params.code;

@@ -1,4 +1,3 @@
-export const load = async ({ locals }) => {
-  // Make user available to the client on every page
-  return { user: locals.user };
-};
+export async function load({ cookies }) {
+  return { cookies: cookies.getAll() };
+}

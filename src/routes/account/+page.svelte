@@ -1,192 +1,251 @@
 <script>
+  import { onMount, tick } from 'svelte';
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
-  import { supabase } from '$lib/supabaseClient'; // PUBLIC client
+  import dmc from '$lib/data/dmc.json';
+  import { stash, stashSet, stashCount } from '$lib/stores/stash.js';
 
-  // UI state
-  let mode = 'signin'; // 'signin' | 'signup' | 'updatePass'
-  let email = '';
-  let password = '';
-  let confirm = '';
-  let newPassword = '';
-  let loading = false;
-  let msg = '';
-  let err = '';
+  // auth from +layout
+  $: user = $page.data.user;
+  $: supabase = $page.data.supabase;
 
-  // Determine origin for redirects (works in browser only)
-  const origin =
-    typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  let q = '';
+  let focusParam = '';
 
-  // If user came back from the reset link, show "Set new password" mode
-  $: if ($page.url.searchParams.get('reset') === '1' && mode !== 'updatePass') {
-    mode = 'updatePass';
+  // Only colors that are in the stash (if signed out, treat as empty)
+  $: stashColors = (user ? dmc.filter((c) => $stashSet.has(String(c.code))) : []);
+
+  // Filter within stash by query
+  $: filtered = stashColors.filter((c) => {
+    if (!q) return true;
+    const n = q.toLowerCase();
+    return (
+      String(c.code).toLowerCase().includes(n) ||
+      c.name.toLowerCase().includes(n)
+    );
+  });
+  $: shownCount = filtered.length;
+
+  // Displayed stash count (0 when logged out)
+  $: displayStashCount = user ? $stashCount : 0;
+
+  function tip(c) {
+    return `DMC ${c.code} — ${c.name}`;
   }
 
-  // ---- actions ----
-  async function oauth(provider) {
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: `${origin}/account` }
-    });
+  // Cloud sync
+  async function saveToCloud() {
+    if (!user) return;
+    const items = $stash;
+    await supabase.from('stashes').upsert({ user_id: user.id, items });
+  }
+  async function loadFromCloud() {
+    if (!user) return;
+    const { data: row } = await supabase
+      .from('stashes')
+      .select('items')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (row?.items) stash.setAll(row.items);
   }
 
-  async function sendMagicLink() {
-    err = ''; msg = ''; loading = true;
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${origin}/account` }
-    });
-    loading = false;
-    if (error) err = error.message;
-    else msg = 'Magic link sent. Please check your email.';
-  }
+  // Optional focus scroll (parity with /colors)
+  onMount(async () => {
+    const sp = new URLSearchParams(window.location.search);
+    const initialQ = sp.get('q'); if (initialQ) q = initialQ;
+    focusParam = sp.get('focus') || '';
+    const hashId = window.location.hash?.slice(1);
 
-  async function signIn() {
-    err = ''; msg = ''; loading = true;
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    loading = false;
-    if (error) err = error.message;
-    else goto('/'); // success
-  }
-
-  async function signUp() {
-    if (password !== confirm) {
-      err = 'Passwords do not match.';
-      return;
+    await tick();
+    const id = hashId || (focusParam ? `dmc-${focusParam}` : '');
+    if (!id) return;
+    let el = document.getElementById(id);
+    if (!el) { q = ''; await tick(); el = document.getElementById(id); }
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 1400);
     }
-    err = ''; msg = ''; loading = true;
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: `${origin}/account` }
-    });
-    loading = false;
-    if (error) err = error.message;
-    else msg = 'Check your email to confirm your account.';
-  }
-
-  async function sendReset() {
-    err = ''; msg = '';
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/account?reset=1`
-    });
-    if (error) err = error.message;
-    else msg = 'Password reset email sent.';
-  }
-
-  async function updatePassword() {
-    if (!newPassword || newPassword.length < 6) {
-      err = 'Password must be at least 6 characters.';
-      return;
-    }
-    err = ''; msg = ''; loading = true;
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    loading = false;
-    if (error) err = error.message;
-    else {
-      msg = 'Password updated. You can now sign in.';
-      mode = 'signin';
-      password = '';
-      newPassword = '';
-    }
-  }
+  });
 </script>
 
-<svelte:head>
-  <title>Account</title>
-</svelte:head>
+<svelte:head><title>My stash • Floss Cabinet</title></svelte:head>
 
-<section class="wrap">
-  <h1>Account</h1>
-
-  <div class="card">
-    {#if mode !== 'updatePass'}
-      <!-- OAuth -->
-             <!-- Email/password auth -->
-      <div class="tabs">
-        <button class:active={mode === 'signin'} on:click={() => (mode = 'signin')}>
-          Sign in
-        </button>
-        <button class:active={mode === 'signup'} on:click={() => (mode = 'signup')}>
-          Create account
-        </button>
-      </div>
-
-      <label>
-        <span>Email</span>
-        <input type="email" bind:value={email} placeholder="you@example.com" />
-      </label>
-
-      {#if mode === 'signin'}
-        <label>
-          <span>Password</span>
-          <input type="password" bind:value={password} />
-        </label>
-
-        <div class="row">
-          <button class="btn primary" on:click={signIn} disabled={loading}>Sign in</button>
-          <button class="btn subtle" on:click={sendReset} disabled={!email || loading}>
-            Forgot password?
-          </button>
-        </div>
-      {:else}
-        <label>
-          <span>Password</span>
-          <input type="password" bind:value={password} />
-        </label>
-        <label>
-          <span>Confirm password</span>
-          <input type="password" bind:value={confirm} />
-        </label>
-        <button class="btn primary" on:click={signUp} disabled={loading}>Create account</button>
-      {/if}
-
-        <!-- Magic link (optional) -->
-    
-    {:else}
-      <!-- Update password after reset -->
-      <h3>Set a new password</h3>
-      <label>
-        <span>New password</span>
-        <input type="password" bind:value={newPassword} />
-      </label>
-      <button class="btn primary" on:click={updatePassword} disabled={loading}>
-        Update password
-      </button>
+<!-- Page header -->
+<header class="pagehead">
+  <div>
+    <h1>My stash</h1>
+    <p class="meta">
+      <strong>{displayStashCount}</strong> saved
+      {#if user}<span style="opacity:.6;">· filter to {shownCount}</span>{/if}
+    </p>
+    {#if !user}
+      <p class="meta" style="opacity:.75;">You’re signed out — your stash is empty. <a href="/auth?tab=login" class="link">Sign in</a> to save colors.</p>
     {/if}
-
-    {#if err}<p class="err">{err}</p>{/if}
-    {#if msg}<p class="msg">{msg}</p>{/if}
   </div>
+</header>
+
+<!-- Sticky toolbar (same look as /colors) -->
+<section class="toolbar">
+  <div class="search">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 21l-4.2-4.2m1.7-5.5a7 7 0 11-14 0 7 7 0 0114 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <input placeholder="Search name or code…" bind:value={q} disabled={!user} />
+  </div>
+
+  <button class="ghost" on:click={() => stash.clear()} disabled={!user || $stashCount===0}>
+    Clear local
+  </button>
+  <button class="ghost" on:click={loadFromCloud} disabled={!user}>
+    Load from cloud
+  </button>
+  <button class="ghost grad" on:click={saveToCloud} disabled={!user || $stashCount===0}>
+    Save to cloud
+  </button>
 </section>
 
+<!-- Grid -->
+<main class="wrap">
+  <div class="grid">
+    {#if user}
+      {#each filtered as c (c.code)}
+        <button
+          id={`dmc-${c.code}`}
+          class="card { $stashSet.has(String(c.code)) ? 'in-stash' : '' }"
+          on:click={() => stash.toggle(String(c.code))}   
+          aria-pressed={$stashSet.has(String(c.code))}
+          title={tip(c)}
+          type="button"
+        >
+          <div class="swatch" style={`--c:${c.hex}`}></div>
+          <div class="meta">
+            <div class="code">DMC {c.code}</div>
+            <div class="name">{c.name}</div>
+          </div>
+
+          {#if $stashSet.has(String(c.code))}
+            <span class="chip-stash" aria-label="In stash">✓</span>
+          {/if}
+        </button>
+      {/each}
+    {/if}
+  </div>
+</main>
+
 <style>
-  .wrap{ max-width:820px; margin:4rem auto; padding:0 1rem; }
-  h1{ font-size:2rem; margin-bottom:1rem; }
-  .card{
-    max-width:560px; background:#111217; border:1px solid rgba(255,255,255,.08);
-    border-radius:16px; padding:1.25rem; box-shadow: 0 10px 30px rgba(0,0,0,.35);
-  }
-  .btn{ padding:.55rem .9rem; border:1px solid rgba(255,255,255,.12);
-    border-radius:10px; background:#171922; color:#fff; cursor:pointer; }
-  .btn.primary{ background:#1e2433; border-color:rgba(255,255,255,.18); }
-  .btn.grad{ background: linear-gradient(135deg,#9b5cff,#00d1ff); border-color:transparent; }
-  .btn.subtle{ background:transparent; }
-  .btn[disabled]{ opacity:.6; cursor:not-allowed; }
-  .wfull{ width:100%; }
-  .row{ display:flex; gap:.6rem; align-items:center; }
-  .grow{ flex:1; }
-  label{ display:flex; flex-direction:column; gap:.35rem; margin:.6rem 0; }
-  input{
-    background:#0f121a; color:#fff; border:1px solid rgba(255,255,255,.12);
-    padding:.6rem .7rem; border-radius:10px; outline:none;
-  }
-  .or{ text-align:center; opacity:.7; margin:.6rem 0; }
-  .or.small{ margin:.4rem 0 .6rem; font-size:.9rem; }
-  .tabs{ display:flex; gap:.4rem; margin:.4rem 0 .6rem; }
-  .tabs button{ all:unset; cursor:pointer; padding:.4rem .7rem; border-radius:10px;
-    border:1px solid transparent; opacity:.85; }
-  .tabs button.active{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.12); opacity:1; }
-  .err{ color:#ff6b6b; margin-top:.6rem; }
-  .msg{ color:#5ad27d; margin-top:.6rem; }
+:root{
+  --bg:#0f0f12;
+  --surface: color-mix(in oklab, white 5%, transparent);
+  --border:  color-mix(in oklab, white 14%, transparent);
+  --border-strong: color-mix(in oklab, white 22%, transparent);
+  --accent:#9b5cff;
+  color-scheme: dark;
+}
+
+/* ===== Page header (same as /colors) ===== */
+.pagehead{
+  max-width:1160px; margin:.9rem auto .4rem; padding:0 1rem;
+  display:flex; align-items:end; justify-content:space-between;
+}
+h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
+.meta{ margin:.25rem 0 0; opacity:.8;}
+.link{ text-decoration:underline; text-underline-offset:3px; }
+
+/* ===== “Island” toolbar (same look) ===== */
+.toolbar{
+  position:sticky; top:52px; z-index:30;
+  max-width:1160px; margin:0 auto 1rem; padding:.55rem .6rem;
+  display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;
+  background: linear-gradient(180deg,
+      color-mix(in oklab, white 6%, transparent),
+      color-mix(in oklab, white 3%, transparent) 55%,
+      transparent);
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  backdrop-filter: blur(4px) saturate(1.15);
+}
+
+.search{
+  flex:1 1 420px; min-width:240px;
+  display:grid; grid-template-columns:38px 1fr; align-items:center;
+  border:1px solid var(--border); border-radius:999px;
+  background: var(--surface);
+  padding:.2rem .3rem;
+}
+.search svg{ width:20px; height:20px; margin-left:.45rem; opacity:.85;}
+.search input{ border:0; outline:0; background:transparent; color:inherit; padding:.55rem .65rem; font-size:1rem;}
+
+/* ghost buttons to match /colors, plus a gradient primary */
+.ghost{
+  border-radius:999px; padding:.55rem .8rem;
+  background:var(--surface); border:1px solid var(--border);
+  color:inherit; cursor:pointer;
+}
+.ghost:disabled{ opacity:.55; cursor:not-allowed;}
+.ghost.grad{ background:linear-gradient(135deg,#9b5cff,#00d1ff); color:#111; border-color:transparent; }
+
+/* ===== Layout & grid (same as /colors) ===== */
+.wrap{ max-width:1160px; margin:0 auto 2rem; padding:0 1rem;}
+.grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px,1fr));
+  gap:.85rem;
+}
+
+/* ===== Cards (same as /colors) ===== */
+.card{
+  position:relative;
+  display:grid; grid-template-columns:42px 1fr; align-items:center; gap:.6rem;
+  padding:.7rem .75rem;
+  border-radius:16px;
+  background: linear-gradient(180deg,
+      color-mix(in oklab, white 6%, transparent),
+      transparent 65%);
+  border:1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0,0,0,.12);
+  text-align:left; cursor:pointer;
+  transition: transform .12s ease, box-shadow .18s ease, border-color .18s ease, filter .18s ease;
+  overflow:hidden;
+}
+.card::before{
+  content:"";
+  position:absolute; inset:-1px; border-radius:inherit; pointer-events:none;
+  background:
+    radial-gradient(60% 80% at 8% 0%, rgba(255,255,255,.10), transparent 40%);
+  opacity:0; transition:opacity .18s ease;
+}
+.card:hover{
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--accent) 22%, var(--border));
+  box-shadow: 0 14px 28px rgba(0,0,0,.18);
+}
+.card:hover::before{ opacity:1; }
+.card:active{ transform: translateY(0); filter:brightness(.98); }
+
+.swatch{
+  --c:#ccc;
+  width:42px; height:42px; border-radius:12px; background:var(--c);
+  border:1px solid #0000001a;
+  box-shadow:
+    inset 0 0 0 2px #0000000d,
+    inset 0 10px 20px rgba(255,255,255,.06);
+}
+.meta .code{ font-weight:800; font-size:.92rem; line-height:1.05;}
+.meta .name{ opacity:.92; font-size:.86rem; line-height:1.1;}
+
+.card{ position:relative; }
+.chip-stash{
+  position:absolute; top:6px; right:6px;
+  width:22px; height:22px; border-radius:999px;
+  display:grid; place-items:center;
+  background:#1fc96e; color:#fff; font-weight:1000; font-size:.85rem;
+  box-shadow:0 6px 16px rgba(0,0,0,.22), inset 0 0 0 2px rgba(255,255,255,.15);
+  pointer-events:none;
+}
+.card.in-stash .chip-stash{ animation:chip-pop .18s ease-out;}
+@keyframes chip-pop{ 0%{ transform:scale(.6); opacity:0;} 60%{ transform:scale(1.1); opacity:1;} 100%{ transform:scale(1);}}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .card, .card::before, .chip-stash{ transition:none !important; animation:none !important;}
+}
 </style>
