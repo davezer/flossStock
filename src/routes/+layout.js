@@ -1,12 +1,18 @@
-import { createServerClient } from '@supabase/ssr';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '$env/static/private';
+// src/routes/+layout.js
+import { createBrowserClient, isBrowser } from '@supabase/ssr';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 
-export async function load({ fetch, cookies }) {
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies,
-    global: { fetch }
-  });
-  const { data: { session } } = await supabase.auth.getSession();
-  const { data: { user } } = await supabase.auth.getUser();
-  return { session, user };
+export async function load({ data, depends, fetch }) {
+  depends('supabase:auth');
+
+  // Only instantiate in the browser
+  const supabase = isBrowser()
+    ? createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, { global: { fetch } })
+    : null;
+
+  return {
+    supabase,
+    session: data.session ?? null,
+    user: data.user ?? null
+  };
 }
