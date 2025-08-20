@@ -4,20 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build-docker": "DOCKER_BUILD=true vite build --verbose",
-    "docker-build": "docker build . -t $USER/league-page:latest",
-    "docker-run": "npm run docker-build && docker run -p 3000:3000 $USER/league-page:latest",
-    "smui-theme-light": "smui-theme compile static/smui.css -i src/theme",
-    "smui-theme-dark": "smui-theme compile static/smui-dark.css -i src/theme/dark",
-    "dev": "svelte-kit dev",
+       "dev": "svelte-kit dev",
     "build": "svelte-kit build",
     "preview": "svelte-kit preview",
     "prepare": "svelte-kit sync || echo ''",
-    "prepack": "echo 'skip library packaging'",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch",
-    "format": "prettier --write .",
-    "lint": "prettier --check . && eslint ."
+    "prepack": "echo 'skip library packaging'"
   },
   "sideEffects": ["**/*.css"],
   "engines": { "node": ">=18.17 <23" },
