@@ -1,18 +1,12 @@
-import { createBrowserClient, isBrowser } from '@supabase/ssr';
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { createServerClient } from '@supabase/ssr';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '$env/static/private';
 
-export async function load({ data, depends, fetch }) {
-  depends('supabase:auth');
-
-  // Only create the browser client in the browser.
-  const supabase = isBrowser()
-    ? createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, { global: { fetch } })
-    : null;
-
-  // Reuse session/user calculated on the server
-  return {
-    supabase,
-    session: data.session ?? null,
-    user: data.user ?? null
-  };
+export async function load({ fetch, cookies }) {
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookies,
+    global: { fetch }
+  });
+  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { user } } = await supabase.auth.getUser();
+  return { session, user };
 }
