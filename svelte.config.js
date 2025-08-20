@@ -1,4 +1,14 @@
-import adapter from '@sveltejs/adapter-vercel';
-import { vitePreprocess } from '@sveltejs/kit/vite';
+import vercel from '@sveltejs/adapter-vercel';
+import node from '@sveltejs/adapter-node';
 
-export default { preprocess: vitePreprocess(), kit: { adapter: adapter() } };
+const dockerBuild = process.env.DOCKER_BUILD
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	
+	kit: {
+		adapter: dockerBuild ? node() : vercel(),
+	}
+};
+
+export default config;
