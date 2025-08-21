@@ -98,4 +98,21 @@
   .btn{ padding:.45rem .8rem; border-radius:10px; border:1px solid rgba(255,255,255,.14);
         background: linear-gradient(-26deg, #9b5cff, #00d1ff); cursor:pointer; color:inherit; }
   .btn.grad{ background:linear-gradient(135deg,#9b5cff,#00d1ff); color:#111; border-color:transparent; }
+
+  @media (max-width: 430px){
+  .topbar{
+    gap: .35rem;
+    padding: .5rem .6rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .topbar::-webkit-scrollbar{ display: none; }
+  .brand{ font-size: 1rem; }
+  .tab{
+    white-space: nowrap;
+    padding: .45rem .6rem;
+    border-radius: 10px;
+  }
+}
 </style>

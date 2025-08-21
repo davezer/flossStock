@@ -240,4 +240,12 @@ h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
 @media (prefers-reduced-motion: reduce){
   .card, .card::before, .chip-stash{ transition:none !important; animation:none !important;}
 }
+
+@media (max-width: 430px){
+  .toolbar{
+    top: calc(var(--topbar-h) + .5rem);
+    padding: .6rem;
+    border-radius: 14px;
+  }
+}
 </style>
