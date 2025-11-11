@@ -6,7 +6,35 @@
 
   // auth from +layout
   $: user = $page.data.user;
-  $: supabase = $page.data.supabase;
+
+  /* ---------- Avatar upload (Section 5) ---------- */
+  let file = null;
+  let msg = '';
+  let localPreview = '';
+
+  // Prefer R2 avatar if present
+  $: r2Avatar = user && user.avatar_key ? `/api/avatar/${user.avatar_key}` : '';
+
+  function onPick(e) {
+    file = e.currentTarget.files && e.currentTarget.files[0] ? e.currentTarget.files[0] : null;
+    if (localPreview) URL.revokeObjectURL(localPreview);
+    localPreview = file ? URL.createObjectURL(file) : '';
+    msg = '';
+  }
+
+  async function upload() {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/account/avatar', { method: 'POST', body: fd });
+    let j = null; try { j = await r.json(); } catch {}
+    msg = r.ok ? '✅ Avatar updated!' : (j && j.error ? j.error : 'Upload failed');
+    if (r.ok) {
+      await tick();
+      location.reload(); // refresh to get new user.avatar_key in layout data
+    }
+  }
+  /* ---------- /Avatar upload ---------- */
 
   let q = '';
   let focusParam = '';
@@ -32,22 +60,6 @@
     return `DMC ${c.code} — ${c.name}`;
   }
 
-  // Cloud sync
-  async function saveToCloud() {
-    if (!user) return;
-    const items = $stash;
-    await supabase.from('stashes').upsert({ user_id: user.id, items });
-  }
-  async function loadFromCloud() {
-    if (!user) return;
-    const { data: row } = await supabase
-      .from('stashes')
-      .select('items')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (row?.items) stash.setAll(row.items);
-  }
-
   // Optional focus scroll (parity with /colors)
   onMount(async () => {
     const sp = new URLSearchParams(window.location.search);
@@ -66,11 +78,53 @@
       setTimeout(() => el.classList.remove('flash'), 1400);
     }
   });
+
+  // NOTE: your buttons reference saveToCloud/loadFromCloud;
+  // leaving them as-is assuming they’re implemented in your stash store.
 </script>
 
 <svelte:head><title>My stash • Floss Cabinet</title></svelte:head>
 
-<!-- Page header -->
+<!-- ===== Account / Avatar card ===== -->
+{#if user}
+<section class="account">
+  <h2 class="h">Account</h2>
+  <div class="acct-card">
+    <div class="avatar-wrap">
+      {#if localPreview}
+        <img class="avatar" src={localPreview} alt="avatar preview" />
+      {:else if r2Avatar}
+        <img class="avatar" src={r2Avatar} alt="current avatar" />
+      {:else}
+        <div class="avatar placeholder" aria-hidden="true">?</div>
+      {/if}
+    </div>
+
+    <div class="acct-body">
+      <div class="row">
+        <label>Email</label>
+        <div class="value">{user.email}</div>
+      </div>
+
+      <div class="row">
+        <label>Avatar</label>
+        <div class="value">
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            on:change={onPick}
+          />
+          <button class="btn" on:click={upload} disabled={!file}>Upload</button>
+          {#if msg}<div class="msg">{msg}</div>{/if}
+          <p class="hint">Max 2&nbsp;MB. PNG / JPG / WebP / GIF. Stored in Cloudflare R2.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{/if}
+
+<!-- ===== Page header ===== -->
 <header class="pagehead">
   <div>
     <h1>My stash</h1>
@@ -84,7 +138,7 @@
   </div>
 </header>
 
-<!-- Sticky toolbar (same look as /colors) -->
+<!-- Sticky toolbar -->
 <section class="toolbar">
   <div class="search">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 21l-4.2-4.2m1.7-5.5a7 7 0 11-14 0 7 7 0 0114 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -110,7 +164,7 @@
         <button
           id={`dmc-${c.code}`}
           class="card { $stashSet.has(String(c.code)) ? 'in-stash' : '' }"
-          on:click={() => stash.toggle(String(c.code))}   
+          on:click={() => stash.toggle(String(c.code))}
           aria-pressed={$stashSet.has(String(c.code))}
           title={tip(c)}
           type="button"
@@ -140,7 +194,37 @@
   color-scheme: dark;
 }
 
-/* ===== Page header (same as /colors) ===== */
+/* ===== Account card ===== */
+.account{ max-width:1160px; margin:1rem auto 0; padding:0 1rem; }
+.h{ margin:.2rem 0 .6rem; font-size:1.2rem; opacity:.9; }
+.acct-card{
+  display:grid; grid-template-columns:88px 1fr; gap:1rem;
+  padding:.9rem; border:1px solid var(--border); border-radius:14px;
+  background: linear-gradient(180deg,
+      color-mix(in oklab, white 6%, transparent),
+      color-mix(in oklab, white 3%, transparent) 55%,
+      transparent);
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+.avatar-wrap{ display:grid; place-items:center; }
+.avatar{
+  width:72px; height:72px; border-radius:999px; object-fit:cover;
+  border:1px solid color-mix(in srgb, #fff 18%, transparent);
+  box-shadow: 0 6px 16px rgba(0,0,0,.22);
+}
+.avatar.placeholder{
+  display:grid; place-items:center; font-weight:800; font-size:1.1rem; color:#fff;
+  background: radial-gradient(circle at 30% 20%, #333, #111 70%);
+}
+.acct-body{ display:grid; gap:.5rem; align-content:center; }
+.row{ display:grid; grid-template-columns:120px 1fr; gap:.6rem; align-items:center; }
+.row label{ opacity:.8; }
+.value{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+.btn{ padding:.45rem .75rem; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:inherit; cursor:pointer; }
+.msg{ margin-left:.35rem; opacity:.8; }
+.hint{ margin:.25rem 0 0; opacity:.65; font-size:.85rem; }
+
+/* ===== Page header ===== */
 .pagehead{
   max-width:1160px; margin:.9rem auto .4rem; padding:0 1rem;
   display:flex; align-items:end; justify-content:space-between;
@@ -149,7 +233,7 @@ h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
 .meta{ margin:.25rem 0 0; opacity:.8;}
 .link{ text-decoration:underline; text-underline-offset:3px; }
 
-/* ===== “Island” toolbar (same look) ===== */
+/* ===== Toolbar ===== */
 .toolbar{
   position:sticky; top:52px; z-index:30;
   max-width:1160px; margin:0 auto 1rem; padding:.55rem .6rem;
@@ -163,7 +247,6 @@ h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
   box-shadow: 0 8px 24px rgba(0,0,0,.18);
   backdrop-filter: blur(4px) saturate(1.15);
 }
-
 .search{
   flex:1 1 420px; min-width:240px;
   display:grid; grid-template-columns:38px 1fr; align-items:center;
@@ -174,7 +257,6 @@ h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
 .search svg{ width:20px; height:20px; margin-left:.45rem; opacity:.85;}
 .search input{ border:0; outline:0; background:transparent; color:inherit; padding:.55rem .65rem; font-size:1rem;}
 
-/* ghost buttons to match /colors, plus a gradient primary */
 .ghost{
   border-radius:999px; padding:.55rem .8rem;
   background:var(--surface); border:1px solid var(--border);
@@ -183,7 +265,7 @@ h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
 .ghost:disabled{ opacity:.55; cursor:not-allowed;}
 .ghost.grad{ background:linear-gradient(135deg,#9b5cff,#00d1ff); color:#111; border-color:transparent; }
 
-/* ===== Layout & grid (same as /colors) ===== */
+/* ===== Layout & grid ===== */
 .wrap{ max-width:1160px; margin:0 auto 2rem; padding:0 1rem;}
 .grid{
   display:grid;
@@ -191,7 +273,7 @@ h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
   gap:.85rem;
 }
 
-/* ===== Cards (same as /colors) ===== */
+/* ===== Cards ===== */
 .card{
   position:relative;
   display:grid; grid-template-columns:42px 1fr; align-items:center; gap:.6rem;

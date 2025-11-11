@@ -1,251 +1,273 @@
 <script>
-  import { onMount, tick } from 'svelte';
-  import { page } from '$app/stores';
-  import dmc from '$lib/data/dmc.json';
-  import { stash, stashSet, stashCount } from '$lib/stores/stash.js';
-  import NavBar from '$lib/components/NavBar.svelte';
+  import { onMount } from 'svelte';
 
+  export let data;
   let q = '';
-  let showOnlyStash = false;
-  let focusParam = '';
+  let sortBy = 'code'; // code | name
+  let onlyStash = false;
 
-  // auth from +layout
-  $: user = $page.data.user;
+  // stash: { [colorId]: qty }
+  let stash = {};
 
-  // filtering
-  $: filtered = dmc.filter((c) => {
-    // When signed out, stash is effectively empty
-    if (showOnlyStash && !(user && $stashSet.has(String(c.code)))) return false;
-    if (!q) return true;
-    const n = q.toLowerCase();
-    return (
-      String(c.code).toLowerCase().includes(n) ||
-      c.name.toLowerCase().includes(n)
-    );
-  });
-  $: shownCount = filtered.length;
-
-  // Displayed stash count = 0 when signed out
-  $: displayStashCount = user ? $stashCount : 0;
-
-  function tip(c) {
-    return `DMC ${c.code} — ${c.name}`;
-  }
-
+  // load current inventory once
   onMount(async () => {
-    const sp = new URLSearchParams(window.location.search);
-    if (sp.get('stash') === '1') showOnlyStash = true;
-    const initialQ = sp.get('q'); if (initialQ) q = initialQ;
-    focusParam = sp.get('focus') || '';
-    const hashId = window.location.hash?.slice(1);
-
-    await tick();
-    const id = hashId || (focusParam ? `dmc-${focusParam}` : '');
-    if (!id) return;
-    let el = document.getElementById(id);
-    if (!el) { q = ''; await tick(); el = document.getElementById(id); }
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('flash');
-      setTimeout(() => el.classList.remove('flash'), 1400);
+    try {
+      const r = await fetch('/api/inventory', { cache: 'no-store' });
+      const j = await r.json();
+      if (j?.items) {
+        stash = Object.fromEntries(j.items.map((it) => [it.color_id, Number(it.quantity || 0)]));
+      }
+    } catch (e) {
+      console.warn('stash load failed', e);
     }
   });
+
+  // match + sort
+  $: list = (data.colors || [])
+    .filter((c) => {
+      const s = q.trim().toLowerCase();
+      if (!s) return true;
+      return String(c.code).toLowerCase().includes(s) || String(c.name).toLowerCase().includes(s);
+    })
+    .sort((a, b) =>
+      sortBy === 'name' ? a.name.localeCompare(b.name) : Number(a.code) - Number(b.code)
+    )
+    .filter((c) => (onlyStash ? (stash[c.id] ?? 0) > 0 : true));
+
+  function inStash(id) { return (stash[id] ?? 0) > 0; }
+
+  async function addOne(c) {
+    try {
+      const r = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ color_id: c.id, op: 'add', quantity: 1 })
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j?.message || `HTTP ${r.status}`);
+      // update local stash count
+      stash = { ...stash, [c.id]: (stash[c.id] ?? 0) + 1 };
+    } catch (e) {
+      console.error(e);
+      alert('Please sign in to save to stash.');
+    }
+  }
+
+  function clearSearch(){ q = ''; }
 </script>
 
-<svelte:head><title>DMC Colors • Floss Cabinet</title></svelte:head>
+<header class="bar">
+  <div class="max">
+    <div class="row">
+      <h1>Color Catalog</h1>
 
-<!-- Page header -->
-<header class="pagehead">
-  <div>
-    <h1>DMC Colors</h1>
-    <p class="meta">
-      <strong>{shownCount}</strong> shown ·
-      <strong>{displayStashCount}</strong> in stash ·
-      <strong>{dmc.length}</strong> total
-    </p>
-    {#if !user}
-      <p class="meta" style="opacity:.75;">You’re signed out — your stash is empty. <a href="/auth?tab=login" class="link">Sign in</a> to save colors.</p>
-    {/if}
+      <label class="toggle" aria-label="Show my stash only">
+        <input type="checkbox" bind:checked={onlyStash} />
+        <span class="track"><span class="knob"></span></span>
+        <span>Show my stash</span>
+      </label>
+
+      <select bind:value={sortBy} aria-label="Sort" class="sort">
+        <option value="code">Code</option>
+        <option value="name">Name</option>
+      </select>
+    </div>
+
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="M20 20L16.5 16.5"/>
+      </svg>
+      <input
+        placeholder="Search code or name…"
+        bind:value={q}
+        spellcheck="false"
+        aria-label="Search colors by code or name"
+      />
+      {#if q}<button class="clear" on:click={clearSearch} aria-label="Clear search">×</button>{/if}
+    </label>
+
+    <div class="meta-line">{list.length} colors</div>
   </div>
 </header>
 
-<!-- Sticky toolbar -->
-<section class="toolbar">
-  <div class="search">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 21l-4.2-4.2m1.7-5.5a7 7 0 11-14 0 7 7 0 0114 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-    <input placeholder="Search name or code…" bind:value={q} />
-  </div>
-
-  <label class="toggle" title={!user ? 'Sign in to filter by your stash' : undefined}>
-    <input type="checkbox" bind:checked={showOnlyStash} disabled={!user} />
-    <span>Show my stash only</span>
-  </label>
-
-  <button class="ghost danger" on:click={stash.clear} disabled={!user || $stashCount===0}>
-    Clear stash ({displayStashCount})
-  </button>
-</section>
-
-<!-- Grid -->
-<main class="wrap">
+<main class="max">
   <div class="grid">
-    {#each filtered as c (c.code)}
-      <button
-        id={`dmc-${c.code}`}
-        class="card { user && $stashSet.has(String(c.code)) ? 'in-stash' : '' }"
-        on:click={() => { if (user) stash.toggle(String(c.code)); }}
-        aria-pressed={user && $stashSet.has(String(c.code))}
-        title={tip(c)}
-        type="button"
-      >
-        <div class="swatch" style={`--c:${c.hex}`}></div>
-        <div class="meta">
-          <div class="code">DMC {c.code}</div>
+    {#each list as c}
+      <article class="card" aria-label={`${c.code} ${c.name}`}>
+        <div class="swatch" style={`--sw:${c.hex};`}/>
+        <footer class="info">
+          <span class="pill">DMC&nbsp;{String(c.code).padStart(2,'0')}</span>
           <div class="name">{c.name}</div>
-        </div>
 
-        {#if user && $stashSet.has(String(c.code))}
-          <span class="chip-stash" aria-label="In stash">✓</span>
-        {/if}
-      </button>
+          <button
+            class="add"
+            aria-label={inStash(c.id) ? 'In stash' : 'Add to stash'}
+            title={inStash(c.id) ? `In stash (${stash[c.id]})` : 'Add to stash'}
+            on:click={() => addOne(c)}
+            data-in={inStash(c.id)}
+          >
+            {#if inStash(c.id)}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 7L10 17l-6-6" fill="none" stroke="currentColor" stroke-width="2.4"
+                      stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {:else}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4"
+                      stroke-linecap="round"/>
+              </svg>
+            {/if}
+          </button>
+        </footer>
+      </article>
     {/each}
   </div>
 </main>
 
 <style>
-:root{
-  --bg:#0f0f12;
-  --surface: color-mix(in oklab, white 5%, transparent);
-  --border:  color-mix(in oklab, white 14%, transparent);
-  --border-strong: color-mix(in oklab, white 22%, transparent);
-  --accent:#9b5cff;
-  color-scheme: dark;
-}
-
-/* ===== Page header ===== */
-.pagehead{
-  max-width:1160px; margin:.9rem auto .4rem; padding:0 1rem;
-  display:flex; align-items:end; justify-content:space-between;
-}
-h1{ margin:0; font-size:1.6rem; letter-spacing:.2px;}
-.meta{ margin:.25rem 0 0; opacity:.8;}
-
-/* ===== “Island” toolbar (rounded container) ===== */
-.toolbar{
-  position:sticky; top:52px; z-index:30;
-  max-width:1160px; margin:0 auto 1rem; padding:.55rem .6rem;
-  display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;
-  background: linear-gradient(180deg,
-      color-mix(in oklab, white 6%, transparent),
-      color-mix(in oklab, white 3%, transparent) 55%,
-      transparent);
-  border:1px solid var(--border);
-  border-radius:14px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.18);
-  backdrop-filter: blur(4px) saturate(1.15);
-}
-
-/* pill search */
-.search{
-  flex:1 1 420px; min-width:240px;
-  display:grid; grid-template-columns:38px 1fr; align-items:center;
-  border:1px solid var(--border); border-radius:999px;
-  background: var(--surface);
-  padding:.2rem .3rem;
-}
-.search svg{ width:20px; height:20px; margin-left:.45rem; opacity:.85;}
-.search input{ border:0; outline:0; background:transparent; color:inherit; padding:.55rem .65rem; font-size:1rem;}
-.toggle{ display:inline-flex; align-items:center; gap:.4rem; opacity:.9;}
-.toggle input{ width:16px; height:16px;}
-.ghost{
-  border-radius:999px; padding:.55rem .8rem;
-  background:var(--surface); border:1px solid var(--border);
-  color:inherit; cursor:pointer;
-}
-.ghost:disabled{ opacity:.55; cursor:not-allowed;}
-.danger{ border-color: color-mix(in oklab, #ff5d7a 58%, transparent);}
-
-/* ===== Layout & grid ===== */
-.wrap{ max-width:1160px; margin:0 auto 2rem; padding:0 1rem;}
-.grid{
-  display:grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px,1fr));
-  gap:.85rem;
-}
-
-/* ===== Cards — softer & less blocky ===== */
-.card{
-  position:relative;
-  display:grid; grid-template-columns:42px 1fr; align-items:center; gap:.6rem;
-  padding:.7rem .75rem;
-  border-radius:16px;
-  background: linear-gradient(180deg,
-      color-mix(in oklab, white 6%, transparent),
-      transparent 65%);
-  border:1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0,0,0,.12);
-  text-align:left; cursor:pointer;
-  transition: transform .12s ease, box-shadow .18s ease, border-color .18s ease, filter .18s ease;
-  overflow:hidden;
-}
-/* soft “sheen” on hover */
-.card::before{
-  content:"";
-  position:absolute; inset:-1px; border-radius:inherit; pointer-events:none;
-  background:
-    radial-gradient(60% 80% at 8% 0%, rgba(255,255,255,.10), transparent 40%);
-  opacity:0; transition:opacity .18s ease;
-}
-.card:hover{
-  transform: translateY(-2px);
-  border-color: color-mix(in oklab, var(--accent) 22%, var(--border));
-  box-shadow: 0 14px 28px rgba(0,0,0,.18);
-}
-.card:hover::before{ opacity:1; }
-.card:active{ transform: translateY(0); filter:brightness(.98); }
-.toolbar { top: var(--topbar-h); }
-
-@keyframes flash-ring{
-  0%{ box-shadow:0 0 0 0 rgba(155,92,255,.55);}
-  70%{ box-shadow:0 0 0 10px rgba(155,92,255,0);}
-  100%{ box-shadow:0 0 0 0 rgba(155,92,255,0);}
-}
-
-/* swatch — rounder with subtle bevel */
-.swatch{
-  --c:#ccc;
-  width:42px; height:42px; border-radius:12px; background:var(--c);
-  border:1px solid #0000001a;
-  box-shadow:
-    inset 0 0 0 2px #0000000d,
-    inset 0 10px 20px rgba(255,255,255,.06);
-}
-.meta .code{ font-weight:800; font-size:.92rem; line-height:1.05;}
-.meta .name{ opacity:.92; font-size:.86rem; line-height:1.1;}
-
-/* tiny top-right stash chip */
-.card{ position:relative; }
-.chip-stash{
-  position:absolute; top:6px; right:6px;
-  width:22px; height:22px; border-radius:999px;
-  display:grid; place-items:center;
-  background:#1fc96e; color:#fff; font-weight:1000; font-size:.85rem;
-  box-shadow:0 6px 16px rgba(0,0,0,.22), inset 0 0 0 2px rgba(255,255,255,.15);
-  pointer-events:none;
-}
-.card.in-stash .chip-stash{ animation:chip-pop .18s ease-out;}
-@keyframes chip-pop{ 0%{ transform:scale(.6); opacity:0;} 60%{ transform:scale(1.1); opacity:1;} 100%{ transform:scale(1);}}
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce){
-  .card, .card::before, .chip-stash{ transition:none !important; animation:none !important;}
-}
-
-@media (max-width: 430px){
-  .toolbar{
-    top: calc(var(--topbar-h) + .5rem);
-    padding: .6rem;
-    border-radius: 14px;
+  :root{
+    --radius: 14px;
+    --radius-sm: 12px;
+    --border: color-mix(in oklab, CanvasText 16%, transparent);
+    --panel: color-mix(in oklab, Canvas 90%, transparent);
+    --panel-strong: color-mix(in oklab, Canvas 86%, transparent);
+    --ink: color-mix(in oklab, CanvasText 94%, #fff 0%);
+    --ink-soft: color-mix(in oklab, CanvasText 70%, transparent);
+    --ring: color-mix(in oklab, #5bbcff 55%, transparent);
   }
-}
+
+  .max{ width:min(1200px, 94vw); margin:0 auto; }
+
+  /* Header */
+  .bar{ position: sticky; top:0; z-index:5; backdrop-filter: blur(6px); padding:16px 0 10px; }
+  .row{
+    display:grid;
+    grid-template-columns: 1fr auto auto;
+    gap:12px;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  h1{ justify-content: center; margin:0; font-weight:700; font-size:1.45rem; letter-spacing:.2px; color:var(--text); }
+
+  .sort{
+    padding:8px 10px;
+    border-radius:10px;
+    background: var(--panel);
+    border:1px solid var(--border);
+    color: var(--ink);
+  }
+
+  /* switch */
+  .toggle{
+    justify-self:end;
+    display:inline-flex; align-items:center; gap:10px; color:var(--text);
+    user-select:none;
+  }
+  .toggle input{
+    position:absolute; opacity:0; width:1px; height:1px; pointer-events:none;
+  }
+  .toggle .track{
+    width:48px; height:28px; border-radius:999px;
+    background: var(--panel); border:1px solid var(--border);
+    display:inline-flex; align-items:center; padding:2px;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .toggle .knob{
+    width:22px; height:22px; border-radius:999px; background:#fff;
+    box-shadow: 0 1px 1px rgba(0,0,0,.15);
+    transform: translateX(0);
+    transition: transform .15s ease;
+  }
+  .toggle input:checked + .track{ background: color-mix(in oklab, #2ecc71 30%, var(--panel-strong)); border-color: color-mix(in oklab, #2ecc71 50%, var(--border)); }
+  .toggle input:checked + .track .knob{ transform: translateX(20px); }
+  .toggle input:focus-visible + .track{ outline: 3px solid var(--ring); outline-offset: 2px; }
+
+  /* search */
+  .search{
+    display:flex; align-items:center; gap:12px;
+    padding:12px 16px; border-radius:999px;
+    background: var(--panel-strong);
+    border:1px solid var(--border);
+    color: var(--text);
+  }
+  .search svg{ width:18px; height:18px; stroke: var(--ink-soft); fill:none; stroke-width:1.6; }
+  .search input{ all:unset; flex:1; min-width:200px; color:var(--ink); font-size:1rem; line-height:1.2; }
+  .search input::placeholder{ color: var(--ink-soft); opacity:.95; }
+  .search .clear{
+    all:unset; cursor:pointer;
+    width:26px; height:26px; border-radius:8px;
+    display:grid; place-items:center;
+    background: color-mix(in oklab, Canvas 86%, transparent);
+    color: var(--ink); font-size:18px;
+    border:1px solid var(--border);
+  }
+  .search .clear:focus-visible{ outline:3px solid var(--ring); outline-offset:3px; }
+  .search:focus-within{ outline:3px solid var(--ring); outline-offset:3px; }
+
+  .meta-line{ margin-top:6px; font-size:.95rem; color:var(--text-soft); }
+
+  /* Grid / cards */
+  .grid{
+    --gap: 10px;
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--gap);
+    padding: 10px 0 40px;
+  }
+  .card{
+    border-radius: var(--radius);
+    background: rgba(255,255,255,.04);
+    border:1px solid var(--border);
+    overflow:hidden;
+    display:flex; flex-direction:column;
+    transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  .card:hover{ transform: translateY(-2px); border-color: color-mix(in oklab, CanvasText 22%, transparent); box-shadow: 0 12px 26px rgba(0,0,0,.12); }
+  .swatch{ aspect-ratio: 5/4; background: var(--sw,#888); }
+
+  /* Footer uses a 2×2 grid so the button is always top-right, no overlap */
+  .info{
+    display:grid;
+    grid-template-columns: 1fr auto;        /* left column | add button */
+    grid-template-rows: auto auto;          /* row1: pill, row2: name */
+    grid-template-areas:
+      "pill add"
+      "name add";
+    gap:6px 8px;
+    padding:10px 12px 12px;
+    min-height:72px; /* keeps rows visually even */
+  }
+  .pill{
+    grid-area:pill;
+    font-size:.72rem; padding:2px 8px; border-radius:999px;
+    background: rgba(255,255,255,.06);
+    border:1px solid var(--border);
+  }
+  .name{
+    grid-area:name; font-weight:650; line-height:1.2; font-size:.92rem;
+    white-space: normal; overflow: visible; /* never truncate */
+  }
+
+  /* Add button tile */
+  .add{
+    grid-area: add;
+    justify-self: end;   /* right edge of footer */
+    align-self: start;   /* top of footer */
+    width:32px; height:32px;
+    display:grid; place-items:center;
+    border-radius:10px; cursor:pointer;
+    border:1px solid var(--border); background:#fff; color:#161616;
+    transition: transform .05s, box-shadow .12s ease, border-color .12s ease;
+  }
+  .add:hover{ border-color: color-mix(in oklab, CanvasText 28%, transparent); box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+  .add:active{ transform: scale(.98); }
+  .add svg{ width:18px; height:18px; }
+  .add svg path{ vector-effect: non-scaling-stroke; }
+
+  /* check state */
+  .add[data-in="true"]{
+    background:#2ecc71; color:#fff;
+    border-color: color-mix(in oklab, #2ecc71 70%, #1b1b1b);
+    box-shadow: 0 0 0 2px color-mix(in oklab, #2ecc71 30%, transparent) inset;
+  }
 </style>

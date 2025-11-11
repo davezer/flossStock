@@ -1,40 +1,39 @@
-import { createServerClient } from '@supabase/ssr';
-import { sequence } from '@sveltejs/kit/hooks';
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { getLucia } from "$lib/server/auth/lucia.js";
 
-const supabase = async ({ event, resolve }) => {
-  // Create a per-request Supabase client; it reads/writes the auth cookie.
-  event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll: () => event.cookies.getAll(),
-      setAll: (cookies) => cookies.forEach(({ name, value, options }) =>
-        event.cookies.set(name, value, { ...options, path: '/' })
-      )
+export async function handle({ event, resolve }) {
+  try {
+    // Always stash DB and Lucia on locals (or null), never throw
+    const DB = event.platform?.env?.DB ?? null;
+    event.locals.DB = DB;
+
+    const lucia = getLucia(DB);
+    event.locals.lucia = lucia;
+
+    // Try to recover session -> user, but do not throw on failure
+    event.locals.user = null;
+    event.locals.session = null;
+
+    if (lucia) {
+      const sid = event.cookies.get("auth_session");
+      if (sid) {
+        try {
+          const { user, session } = await lucia.validateSession(sid);
+          event.locals.user = user ?? null;
+          event.locals.session = session ?? null;
+        } catch (err) {
+          // bad/expired cookie: clear it and continue
+          event.cookies.delete("auth_session", { path: "/" });
+          console.warn("[auth] validateSession error (cleared cookie):", err?.message || err);
+        }
+      }
+    } else {
+      // Useful when DB binding isn’t wired in Pages project
+      console.warn("[auth] No DB binding; auth disabled for this request");
     }
-  });
+  } catch (err) {
+    // Absolutely never crash the request
+    console.error("[hooks] fatal during auth bootstrap:", err);
+  }
 
-  // Safe session getter (validates JWT via getUser())
-  event.locals.safeGetSession = async () => {
-    const { data: { session } } = await event.locals.supabase.auth.getSession();
-    if (!session) return { session: null, user: null };
-    const { data: { user }, error } = await event.locals.supabase.auth.getUser();
-    if (error) return { session: null, user: null };
-    return { session, user };
-  };
-
-  return resolve(event, {
-    filterSerializedResponseHeaders(name) {
-      return name === 'content-range' || name === 'x-supabase-api-version';
-    }
-  });
-};
-
-// (Optional) simple guard template if you later add /private routes
-const authGuard = async ({ event, resolve }) => {
-  const { session, user } = await event.locals.safeGetSession();
-  event.locals.session = session;
-  event.locals.user = user;
   return resolve(event);
-};
-
-export const handle = sequence(supabase, authGuard);
+}
