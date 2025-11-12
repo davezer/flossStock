@@ -55,7 +55,7 @@
   .hero-art {
     position: relative; min-height: 260px; border-radius: 14px; overflow: hidden;
     background: color-mix(in oklab, var(--taupe) 30%, transparent);
-    border: 1px solid var(--stroke);
+    border: 1px solid var(--border);
   }
   .hero-art img {
     display:block; width:100%; height:100%; object-fit: cover;

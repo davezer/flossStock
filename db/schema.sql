@@ -23,51 +23,55 @@ CREATE TABLE IF NOT EXISTS user_key (
 CREATE INDEX IF NOT EXISTS idx_user_key_user_id ON user_key(user_id);
 
 -- Lucia D1 expects active_expires + idle_expires (NOT expires_at)
-CREATE TABLE IF NOT EXISTS user_session (
+CREATE TABLE IF NOT EXISTS session (
   id              TEXT PRIMARY KEY,
   user_id         TEXT NOT NULL,
   active_expires  INTEGER NOT NULL,
   idle_expires    INTEGER NOT NULL,
   FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_user_session_user_id ON user_session(user_id);
+CREATE INDEX IF NOT EXISTS idx_session_user_id ON session(user_id);
 
 -- ========== Catalog ==========
+
 CREATE TABLE IF NOT EXISTS brand (
-  id    TEXT PRIMARY KEY,
-  slug  TEXT UNIQUE NOT NULL,
-  name  TEXT NOT NULL
+  id    TEXT PRIMARY KEY,          -- e.g. 'dmc'
+  slug  TEXT UNIQUE NOT NULL,      -- e.g. 'dmc'
+  name  TEXT NOT NULL              -- e.g. 'DMC'
 );
 
 CREATE TABLE IF NOT EXISTS line (
-  id        TEXT PRIMARY KEY,
+  id        TEXT PRIMARY KEY,      -- e.g. 'dmc:default'
   brand_id  TEXT NOT NULL,
-  slug      TEXT NOT NULL,
+  slug      TEXT NOT NULL,         -- e.g. 'default' or 'six-strand'
   name      TEXT NOT NULL,
   FOREIGN KEY (brand_id) REFERENCES brand(id) ON DELETE CASCADE,
   UNIQUE (brand_id, slug)
 );
 
--- Colors keyed by (brand_id, code). `line_id` optional.
--- If you previously had `full_code`, you can derive it in queries as: slug||'-'||code
+-- Aligns with your seed: line_id is required; full_code is optional
 CREATE TABLE IF NOT EXISTS color (
-  id         TEXT PRIMARY KEY,                   -- keep your existing ids (e.g. ULID)
-  brand_id   TEXT NOT NULL,
-  line_id    TEXT,                               -- nullable: not all brands use lines
-  code       TEXT NOT NULL,                      -- e.g. "310"
-  name       TEXT NOT NULL,                      -- e.g. "Black"
-  hex        TEXT NOT NULL,                      -- e.g. "#000000"
+  id         TEXT PRIMARY KEY,                           -- e.g. 'dmc:default:310'
+  line_id    TEXT NOT NULL REFERENCES line(id) ON DELETE CASCADE,
+  code       TEXT NOT NULL,                              -- '310'
+  full_code  TEXT,                                       -- e.g. 'B5200' (nullable)
+  name       TEXT NOT NULL,                              -- 'Black'
+  hex        TEXT NOT NULL,                              -- '#000000'
   r          INTEGER,
   g          INTEGER,
   b          INTEGER,
-  status     TEXT,                               -- optional (e.g. "active"/"discontinued")
+  status     TEXT,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-  FOREIGN KEY (brand_id) REFERENCES brand(id) ON DELETE CASCADE,
-  FOREIGN KEY (line_id)  REFERENCES line(id)  ON DELETE SET NULL,
-  UNIQUE (brand_id, code)
+  UNIQUE (line_id, code)                                 -- fast lookup per line
 );
-CREATE INDEX IF NOT EXISTS idx_color_brand_code ON color(brand_id, code);
-CREATE INDEX IF NOT EXISTS idx_color_name       ON color(name);
+
+CREATE INDEX IF NOT EXISTS idx_color_name ON color(name);
+
+-- Convenience view to expose brand_id without storing it twice
+CREATE VIEW IF NOT EXISTS v_color_with_brand AS
+SELECT c.*, l.brand_id
+FROM color c
+JOIN line  l ON l.id = c.line_id;
 
 -- ========== Inventory / "stash" ==========
 -- Composite PK guarantees a single row per (user, color)

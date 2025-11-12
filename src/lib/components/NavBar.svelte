@@ -1,4 +1,5 @@
 <script>
+  import ThemeToggle from './ThemeToggle.svelte';
   export let user = null;
 
   let open = false;
@@ -67,9 +68,11 @@
   <div class="center">
     <a href="/colors" class="link">Colors</a>
     <a href="/inventory" class="link">Inventory</a>
+    
   </div>
 
   <div class="right" id="nav-user-menu">
+    <ThemeToggle />
     {#if user}
       <button
         class="avatar-btn"
@@ -107,14 +110,14 @@
     position: sticky; top:0; z-index:50;
     display:flex; align-items:center; justify-content:space-between;
     gap:1rem; padding:.6rem .9rem;
-    border-bottom:1px solid var(--stroke); background:var(--bg);
+    border-bottom:1px solid var(--border); background:var(--bg);
   }
   .brand{ font-weight:700; text-decoration:none; color:var(--text); }
   .center{ display:flex; gap:.9rem; align-items:center; }
   .link{ color:var(--text-2); text-decoration:none; padding:.3rem .5rem; border-radius:.4rem; }
   .link:hover{ background:var(--bg-3); }
   .right{ position:relative; display:flex; align-items:center; gap:.6rem; }
-  .signin{ padding:.4rem .7rem; border:1px solid var(--stroke); border-radius:.6rem; text-decoration:none; }
+  .signin{ padding:.4rem .7rem; border:1px solid var(--border); border-radius:.6rem; text-decoration:none; color: var(--text); }
   .avatar-btn{ all:unset; cursor:pointer; }
   .avatar{
     display:inline-grid; place-items:center;
@@ -125,7 +128,7 @@
   }
   .menu{
     position:absolute; right:0; top:120%;
-    min-width:200px; padding:.4rem; border:1px solid var(--stroke);
+    min-width:200px; padding:.4rem; border:1px solid var(--border);
     border-radius:.6rem; background:var(--bg-2); box-shadow:var(--shadow-1);
     display:grid; gap:.25rem;
   }

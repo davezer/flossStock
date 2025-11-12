@@ -24,10 +24,10 @@
   }
   .toast{
     padding: .55rem .75rem; border-radius: 10px;
-    border: 1px solid var(--stroke);
+    border: 1px solid var(--border);
     background: color-mix(in srgb, var(--bg-3) 92%, #fff);
     color: var(--text); box-shadow: var(--shadow-1);
   }
-  .toast.ok { border-color: color-mix(in srgb, #46c47d 50%, var(--stroke)); }
-  .toast.err{ border-color: color-mix(in srgb, #e45858 60%, var(--stroke)); }
+  .toast.ok { border-color: color-mix(in srgb, #46c47d 50%, var(--border)); }
+  .toast.err{ border-color: color-mix(in srgb, #e45858 60%, var(--border)); }
 </style>

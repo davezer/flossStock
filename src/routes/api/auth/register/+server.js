@@ -1,27 +1,24 @@
-// src/routes/api/auth/register/+server.js
 import { hashPassword } from "$lib/server/auth/password.js";
+import { readCreds } from "$lib/server/helpers/cred.js";     // from earlier message (JSON+Form support)
+import { createSessionRow } from "$lib/server/auth/sessions.js";
 
 export const POST = async ({ request, locals }) => {
   try {
     const DB = locals.DB;
-    const lucia = locals.lucia;
-    if (!DB || !lucia) return new Response("Auth not initialized", { status: 500 });
+    if (!DB) return new Response("Auth not initialized", { status: 500 });
 
-    const form = await request.formData();
-    const email = String(form.get("email") || "").trim().toLowerCase();
-    const password = String(form.get("password") || "");
+    const { email, password } = await readCreds(request);
     if (!email || !password) return new Response("Missing credentials", { status: 400 });
 
-    // ensure user row exists
+    // ensure user row
     let userId = (await DB.prepare(`SELECT id FROM user WHERE email=? LIMIT 1`).bind(email).first())?.id;
     if (!userId) {
       userId = crypto.randomUUID();
       await DB.prepare(`INSERT INTO user (id,email,created_at) VALUES (?,?,unixepoch())`)
-        .bind(userId, email)
-        .run();
+        .bind(userId, email).run();
     }
 
-    // set/reset password hash (match table: id,user_id,hashed_password)
+    // set password
     const hash = await hashPassword(password);
     await DB.prepare(`
       INSERT INTO user_key (id, user_id, hashed_password)
@@ -29,16 +26,14 @@ export const POST = async ({ request, locals }) => {
       ON CONFLICT(id) DO UPDATE SET
         user_id = excluded.user_id,
         hashed_password = excluded.hashed_password
-    `)
-      .bind(`email:${email}`, userId, hash)
-      .run();
+    `).bind(`email:${email}`, userId, hash).run();
 
-    // sign in immediately
-    const session = await lucia.createSession(userId, {});
-    const cookie = lucia.createSessionCookie(session.id);
-    return new Response(null, { status: 204, headers: { "Set-Cookie": cookie.serialize() } });
+    // ⚠️ Manual session insert that matches your table
+    const { cookieHeaderValue } = await createSessionRow(DB, userId);
+
+    return new Response(null, { status: 204, headers: { "Set-Cookie": cookieHeaderValue } });
   } catch (e) {
-    // temporary verbose error helps while we stabilize; remove later
+    console.error("REGISTER ERROR:", e);
     return new Response(`Register error: ${e?.message || e}`, { status: 500 });
   }
 };

@@ -165,10 +165,10 @@
   <table class="inv">
   <!-- lock column widths -->
   <colgroup>
-    <col style="width:56px" />   <!-- swatch -->
+    <col style="width:60px" />   <!-- swatch -->
     <col style="width:100px" />  <!-- code -->
     <col />                      <!-- name (flex) -->
-    <col style="width:140px" />  <!-- qty -->
+    <!-- <col style="width:140px" />  qty -->
     <col />                      <!-- notes (flex) -->
     <col style="width:112px" />  <!-- actions -->
   </colgroup>
@@ -178,7 +178,7 @@
       <th>Swatch</th>
       <th>Code</th>
       <th>Name</th>
-      <th>Qty</th>
+      <!-- <th>Qty</th> -->
       <th>Notes</th>
       <th>Actions</th>
     </tr>
@@ -218,99 +218,87 @@
 {/if}
 
 <style>
-  /* container width */
-.inv{
-  width: min(1200px, 94vw);
-  margin: 16px auto 48px;
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: fixed;          /* <-- crucial: respect colgroup widths */
-  background: color-mix(in oklab, Canvas 92%, transparent);
-  border: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
-  border-radius: 14px;
-  overflow: clip;
+
+/* ====== DESKTOP WIDTH + SHARED ====== */
+.inv,
+.inv-controls{
+  width: min(1360px, 96vw);
+  margin: 14px auto 12px;
 }
 
-/* header */
+/* Controls mirror table columns: 60 | 120 | 1fr | 1fr | 132 */
+.inv-controls{
+  display:grid;
+  grid-template-columns: 60px 120px minmax(420px,1fr) minmax(380px,1fr) 132px;
+  gap:12px;
+  align-items:center;
+}
+
+/* Invisible placeholder = Swatch column so controls align */
+.inv-controls::before{
+  content:"";
+  display:block;
+  grid-column:1;
+}
+
+/* Place each control over its column */
+.ctl.id     { grid-column: 2; text-align:center; }
+.ctl.search { grid-column: 3; }
+.ctl.notes  { grid-column: 4; }
+.btn.primary{ grid-column: 5; justify-self:end; }
+
+/* Lock table columns to match the grid above */
+.inv{ table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.inv col:nth-child(1){ width:60px !important; }   /* swatch */
+.inv col:nth-child(2){ width:120px !important; }  /* code   */
+.inv col:nth-child(5){ width:132px !important; }  /* actions */
+
+/* Sticky header + comfy rows */
 .inv thead th{
-  text-align: left;
-  padding: 12px 14px;
-  font-weight: 700;
-  letter-spacing: .2px;
-  border-bottom: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
-  background: color-mix(in oklab, Canvas 88%, transparent);
+  position: sticky; top: 0; z-index: 1;
+  text-align:left; padding: 12px 16px;
 }
+.inv tbody td{ padding: 12px 16px; vertical-align: middle; }
+.inv tbody tr{ height: 56px; }
 
-/* rows */
-.inv tbody td{
-  padding: 10px 14px;
-  vertical-align: middle;
-  border-bottom: 1px solid color-mix(in oklab, CanvasText 8%, transparent);
-  color: color-mix(in oklab, CanvasText 92%, #fff 0%);
-}
-
-.inv tbody tr:last-child td{ border-bottom: 0; }
-.inv tbody tr:hover td{ background: color-mix(in oklab, Canvas 96%, transparent); }
-
-/* swatch */
+/* Swatch circle */
 .sw{
   display:inline-block; width: 28px; height: 28px; border-radius: 999px;
   background: var(--c,#bbb);
   border:1px solid color-mix(in oklab, CanvasText 18%, transparent);
 }
 
-/* monospace-ish code; center */
+/* Code column centered + tabular */
 .code{
+  text-align:center;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  text-align: center;
-  color: color-mix(in oklab, CanvasText 85%, transparent);
+  letter-spacing:.02em;
+  color: var(--text);
 }
 
-/* name wraps but keeps row height tidy */
-.name{
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;     /* inventory can truncate here if needed */
+/* Uniform pill styling for top inputs AND row note inputs */
+:where(.ctl, .notein){
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, CanvasText 14%, transparent);
+  background: color-mix(in oklab, Canvas 92%, transparent);
+  color: color-mix(in oklab, CanvasText 94%, transparent);
+  font: inherit;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  outline: none;
 }
+:where(.ctl, .notein)::placeholder{
+  color: color-mix(in oklab, CanvasText 60%, transparent);
+}
+:where(.ctl, .notein):focus{
+  border-color: color-mix(in oklab, #5bbcff 46%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, #5bbcff 22%, transparent);
+}
+.notein{ width: 100%; }
 
-/* qty stepper always centered and same width */
-.qty{ text-align: center; }
-.stepper{
-  display:inline-grid;
-  grid-template-columns: 34px 46px 34px;  /* button | value | button */
-  align-items:center;
-  gap:6px;
-}
-.stepper output{
-  display:grid; place-items:center;
-  height:34px; min-width:46px; border-radius:8px;
-  border:1px solid color-mix(in oklab, CanvasText 12%, transparent);
-  background: color-mix(in oklab, Canvas 98%, transparent);
-  font-variant-numeric: tabular-nums;
-}
-.btn.mini{
-  width:34px; height:34px; padding:0;
-  display:grid; place-items:center;       /* <- centers glyph */
-  line-height:1; font-size:18px;          /* crisp minus/plus */
-  border-radius:8px;
-}
-
-/* note input fills column but stays compact */
-.notein{
-  width: 100%;
-  height: 32px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border:1px solid color-mix(in oklab, CanvasText 12%, transparent);
-  background: color-mix(in oklab, Canvas 98%, transparent);
-  color: inherit;
-}
-
-/* actions column centered */
-.actions{ text-align: center; }
-
-/* Buttons */
+/* Buttons to match the pills */
 .btn{
   height: 32px; padding: 0 10px;
   border-radius: 8px; cursor: pointer;
@@ -319,51 +307,47 @@
   color: inherit;
   transition: background .12s, border-color .12s, transform .04s;
 }
-.btn:hover{ background: color-mix(in oklab, Canvas 96%, transparent); border-color: color-mix(in oklab, CanvasText 26%, transparent); }
-.btn:active{ transform: scale(.98); }
-
-.btn.mini{ width: 32px; padding: 0; font-size: 18px; }
-.btn.danger{
-  border-color: color-mix(in oklab, #ff6060 45%, transparent);
-  background: color-mix(in oklab, #ff6060 12%, Canvas 98%);
-}
-.btn.danger:hover{
-  background: color-mix(in oklab, #ff6060 18%, Canvas 96%);
-  border-color: color-mix(in oklab, #ff6060 60%, transparent);
-}
-.inv thead th{ position: sticky; top: 0; z-index: 1; }
-
-.inv-controls{
-  width:min(1200px,94vw);
-  margin:12px auto 10px;
-  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-}
-.ctl{
-  height:38px; padding:0 14px; border-radius:999px;
-  border:1px solid color-mix(in oklab, CanvasText 14%, transparent);
-  background: color-mix(in oklab, Canvas 92%, transparent);
-  color: color-mix(in oklab, CanvasText 94%, transparent);
-}
-.ctl::placeholder{ color: color-mix(in oklab, CanvasText 60%, transparent); }
-.ctl.search{ flex:1 1 360px; min-width:240px; }
-.ctl.id{ width:160px; font-variant-numeric: tabular-nums; text-align:center; }
-.ctl.notes{ flex:1 1 260px; min-width:200px; }
-
 .btn.primary{
-  height:38px; padding:0 14px; border-radius:12px;
-  border:1px solid color-mix(in oklab, CanvasText 20%, transparent);
+  height: 42px; padding: 0 16px; border-radius: 999px;
+  border: 1px solid color-mix(in oklab, CanvasText 20%, transparent);
   background: color-mix(in oklab, #5bbcff 18%, Canvas 96%);
 }
 .btn.primary:hover{
   background: color-mix(in oklab, #5bbcff 24%, Canvas 94%);
 }
+.btn.danger{ border-radius: 999px; }
 
-@media (max-width: 720px){
-  /* hide the Code column (2) */
-  .inv col:nth-child(2), .inv th:nth-child(2), .inv td:nth-child(2){ display:none; }
-
-  /* shrink actions; let notes wrap */
-  .inv col:nth-child(6){ width:90px !important; }
-  .notein{ height:auto; min-height:34px; }
+/* ====== MEDIUM (<=1100px) ====== */
+@media (max-width:1100px){
+  .inv-controls{
+    grid-template-columns: 60px 100px 1fr 1fr 112px;
+    gap:10px;
+  }
+  .inv col:nth-child(2){ width:100px !important; }
+  .inv col:nth-child(5){ width:112px !important; }
+  .inv, .inv-controls{ width: min(1200px, 96vw); }
+  .inv tbody tr{ height: 52px; }
 }
+
+/* ====== MOBILE (<=720px) ====== */
+@media (max-width:720px){
+  /* Hide Code column on phones */
+  .inv col:nth-child(2),
+  .inv th:nth-child(2),
+  .inv td:nth-child(2){ display:none; }
+
+  /* Controls: keep ghost swatch, then wide input + button */
+  .inv-controls{
+    grid-template-columns: 60px 1fr 96px;
+    gap: 8px;
+  }
+  .ctl.id{ display:none; }
+  .ctl.search{ grid-column: 2; }
+  .ctl.notes { grid-column: 2; margin-top:8px; }
+  .btn.primary{ grid-column: 3; justify-self:end; }
+
+  .inv tbody td{ padding: 10px 12px; }
+  .inv tbody tr{ height: 50px; }
+}
+
 </style>

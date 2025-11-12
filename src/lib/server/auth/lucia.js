@@ -2,6 +2,8 @@
 import { Lucia } from "lucia";
 import { D1Adapter } from "@lucia-auth/adapter-sqlite";
 
+
+
 export function getLucia(DB) {
   if (!DB) return null;
 

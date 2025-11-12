@@ -35,7 +35,21 @@
     <input class="input" type="password" placeholder="Password" bind:value={password} required />
     <button class="btn primary" type="submit">Sign in</button>
   </form> -->
-<form method="POST">
+<form method="post" use:enhance={({ result, update }) => {
+  // SvelteKit gives you the outcome of the action:
+  if (result.type === 'redirect') {
+    // our action: `throw redirect(303, '/')`
+    goto(result.location);
+    return;
+  }
+  if (result.type === 'success') {
+    // if you return data instead of throwing redirect
+    goto('/');
+    return;
+  }
+  // for failures, let SvelteKit update the page (show errors)
+  update();
+}}>
   <input class="input" name="email" type="email" autocomplete="email" required />
   <input class="input" name="password" type="password" autocomplete="current-password" required />
   <button class="btn primary" type="submit">Sign in</button>
@@ -48,3 +62,15 @@
   </form> -->
   <p style="margin-top:10px;color:var(--muted)">No account? <a href="/auth/register">Create one</a></p>
 </section>
+<style>
+
+  .auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; 
+}
+.auth-form button {
+  width: 30%;
+  color: var(--text); /* space above button */
+}
+</style>

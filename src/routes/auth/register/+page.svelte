@@ -30,10 +30,22 @@
 <section class="card" style="max-width:420px;margin:40px auto;padding:20px">
   <h1 style="margin:0 0 10px">Create account</h1>
   {#if error}<p style="color:#e33">{error}</p>{/if}
-  <form on:submit={onSubmit} class="grid" style="gap:10px">
+  <form on:submit={onSubmit} class="auth-form" style="gap:10px">
     <input class="input" type="email" placeholder="Email" bind:value={email} required />
     <input class="input" type="password" placeholder="Password" bind:value={password} minlength="6" required />
     <button class="btn primary" type="submit">Create account</button>
   </form>
   <p style="margin-top:10px;color:var(--muted)"><a href="/auth/login">Back to sign in</a></p>
 </section>
+
+<style>
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px; 
+  }
+  .auth-form button {
+    width: 25%;
+    color: var(--muted); /* space above button */
+  }
+  </style>
