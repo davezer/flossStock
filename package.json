@@ -5,17 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-
-    "build": "vite build",                         
+    "build": "vite build",
     "preview": "svelte-kit preview",
-
     "dev:kit": "nodemon -e svelte,js,ts,css,html,svg -w src -w static -w db -x \"vite build\"",
     "dev:cf": "wrangler pages dev .svelte-kit/cloudflare --persist-to .wrangler/state",
     "dev:pages": "npm-run-all -p dev:kit dev:cf",
-
     "preview:pages": "vite build && wrangler pages dev .svelte-kit/cloudflare",
     "deploy": "vite build && wrangler pages deploy .svelte-kit/cloudflare --project-name threadindex",
-
     "db:schema:local": "wrangler d1 execute DB --local --file=./db/schema.sql",
     "db:seed:local": "wrangler d1 execute DB --local --file=./db/seed.dmc.sql",
     "db:schema:remote": "wrangler d1 execute DB --remote --file=./db/schema.sql",
@@ -85,6 +81,7 @@
     "cheerio": "^1.1.2",
     "lucia": "3.2.2",
     "node-fetch": "^3.3.2",
+    "pdfjs-dist": "^5.4.394",
     "scrypt-js": "^3.0.1",
     "spark-md5": "^3.0.2"
   },

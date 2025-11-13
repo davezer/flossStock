@@ -3,7 +3,9 @@
   export let user = null;
 
   let open = false;
-  $: r2Avatar = user?.avatar_key ? `/api/avatar/${user.avatar_key}` : '';
+  $: avatarSrc =
+  (user?.avatarUrl || user?.avatar_url) // from DB via Lucia
+  || (user?.avatar_key ? `/api/avatar/${user.avatar_key}` : '');
     // --- MD5 (tiny implementation, no deps) ---
   function md5(str) {
       return crypto.subtle.digest("MD5", new TextEncoder().encode(str))
@@ -68,6 +70,7 @@
   <div class="center">
     <a href="/colors" class="link">Colors</a>
     <a href="/inventory" class="link">Inventory</a>
+    <a href="/scan" class="link">Scan PDF</a>
     
   </div>
 
@@ -81,13 +84,30 @@
         on:click={() => (open = !open)}
         title={user.email}
       >
-        {#if r2Avatar && !avatarBroken}
-          <img class="avatar-img" src={r2Avatar} alt="avatar" on:error={handleError} />
-        {:else if gravatarUrl && !avatarBroken}
-          <img class="avatar-img" src={gravatarUrl} alt="avatar" referrerpolicy="no-referrer" on:error={handleError} />
-        {:else}
-          <span class="avatar-fallback" style={`--bg:${colorFrom(user?.email)}`}>{initials(user?.email)}</span>
-        {/if}
+        {#if avatarSrc && !avatarBroken}
+  <img
+    class="avatar-img"
+    src={avatarSrc}
+    alt="avatar"
+    on:error={handleError}
+  />
+{:else if gravatarUrl && !avatarBroken}
+  <img
+    class="avatar-img"
+    src={gravatarUrl}
+    alt="avatar"
+    referrerpolicy="no-referrer"
+    on:error={handleError}
+  />
+{:else}
+  <span
+    class="avatar-fallback"
+    style={`--bg:${colorFrom(user?.email)}`}
+  >
+    {initials(user?.email)}
+  </span>
+{/if}
+
               </button>
 
 

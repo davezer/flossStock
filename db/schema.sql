@@ -6,12 +6,17 @@
 PRAGMA foreign_keys = ON;
 
 -- ========== Lucia auth tables (Cloudflare D1) ==========
+
 CREATE TABLE IF NOT EXISTS user (
   id         TEXT PRIMARY KEY,
   email      TEXT UNIQUE NOT NULL,
+  username   TEXT,                          -- NEW: app username
   avatar_url TEXT,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+-- NEW: enforce uniqueness for non-null usernames
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_username ON user(username);
 
 CREATE TABLE IF NOT EXISTS user_key (
   id              TEXT PRIMARY KEY,              -- e.g. "email:<email>" or "oauth:<provider>:<id>"
@@ -74,7 +79,7 @@ FROM color c
 JOIN line  l ON l.id = c.line_id;
 
 -- ========== Inventory / "stash" ==========
--- Composite PK guarantees a single row per (user, color)
+
 CREATE TABLE IF NOT EXISTS inventory (
   user_id    TEXT NOT NULL,
   color_id   TEXT NOT NULL,
@@ -100,7 +105,7 @@ END;
 CREATE VIEW IF NOT EXISTS v_user_inventory_counts AS
 SELECT
   i.user_id,
-  COUNT(*)              AS distinct_colors,
+  COUNT(*)                    AS distinct_colors,
   COALESCE(SUM(i.quantity), 0) AS total_skeins
 FROM inventory i
 GROUP BY i.user_id;
