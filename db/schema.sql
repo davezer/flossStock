@@ -109,3 +109,22 @@ SELECT
   COALESCE(SUM(i.quantity), 0) AS total_skeins
 FROM inventory i
 GROUP BY i.user_id;
+
+-- ========== Shopping list / wishlist ==========
+CREATE TABLE IF NOT EXISTS wishlist (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES user(id)   ON DELETE CASCADE,
+  color_id    TEXT NOT NULL REFERENCES color(id) ON DELETE CASCADE,
+  desired_qty INTEGER NOT NULL DEFAULT 1,
+  notes       TEXT,                               -- <— add this
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE (user_id, color_id)
+);
+
+CREATE VIEW IF NOT EXISTS v_user_wishlist_counts AS
+SELECT
+  w.user_id,
+  COUNT(*) AS distinct_colors,
+  COALESCE(SUM(w.desired_qty), 0) AS total_desired
+FROM wishlist w
+GROUP BY w.user_id;

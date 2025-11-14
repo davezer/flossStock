@@ -4,7 +4,7 @@ INSERT OR IGNORE INTO brand (id, slug, name) VALUES ('dmc', 'dmc', 'dmc');
 INSERT OR IGNORE INTO line (id, brand_id, slug, name) VALUES ('dmc:default', 'dmc', 'default', 'Default');
 
 
-
+INSERT OR IGNORE INTO color (id, line_id, code, full_code, name, hex, status) VALUES ('dmc:default:BLANC', 'dmc:default', 'BLANC', 'BLANC', 'White (BLANC)', '#FFFFFF',NULL);
 INSERT OR IGNORE INTO color (id, line_id, code, full_code, name, hex, status) VALUES ('dmc:default:01', 'dmc:default', '01', '01', 'White Tin', '#E3E3E6', NULL);
 INSERT OR IGNORE INTO color (id, line_id, code, full_code, name, hex, status) VALUES ('dmc:default:02', 'dmc:default', '02', '02', 'Tin', '#D7D7D8', NULL);
 INSERT OR IGNORE INTO color (id, line_id, code, full_code, name, hex, status) VALUES ('dmc:default:03', 'dmc:default', '03', '03', 'Tin Medium', '#B8B8BB', NULL);
