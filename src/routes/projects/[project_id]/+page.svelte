@@ -1,744 +1,795 @@
 <!-- src/routes/projects/[project_id]/+page.svelte -->
 <script>
-  import { browser } from '$app/environment';
-  import { pushToast } from '$lib/stores/toast.js';
-  export let data;
+	import { browser } from '$app/environment';
+	import { pushToast } from '$lib/stores/toast.js';
+	export let data;
 
+	const project = data.project;
+	let colors = data.colors ?? [];
 
-  const project = data.project;
-  let colors = data.colors ?? [];
+	const addingWishlist = new Set();
 
-  // ----- remove color from project -----
-  const inflightRemove = new Set();
+	function getHave(c) {
+		// whatever your load function calls it – cover both
+		return Number(c.have ?? c.quantity ?? 0) || 0;
+	}
 
-  async function removeColor(c) {
-    const key = c.color_id;
-    if (inflightRemove.has(key)) return;
-    inflightRemove.add(key);
+	async function addColorToWishlist(c) {
+		const colorId = c.color_id || c.id;
+		if (!colorId) return;
 
-    const prev = colors;
-    colors = colors.filter((x) => x.color_id !== key);
+		if (addingWishlist.has(colorId)) return;
+		addingWishlist.add(colorId);
 
-    try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(project.id)}/colors?color_id=${encodeURIComponent(
-          key
-        )}`,
-        { method: 'DELETE' }
-      );
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || j?.ok === false) {
-        throw new Error(j?.message || `HTTP ${res.status}`);
-      }
-      pushToast?.({
-        type: 'success',
-        msg: `Removed ${c.code} from “${project.name}”.`
-      });
-    } catch (e) {
-      colors = prev;
-      pushToast?.({
-        type: 'error',
-        msg: e.message || 'Could not remove color from project.'
-      });
-    } finally {
-      inflightRemove.delete(key);
-    }
-  }
+		try {
+			const res = await fetch('/api/wishlist', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					items: [{ color_id: colorId, desired_qty: 1 }]
+				})
+			});
 
-  // ----- scan PDF for this project -----
-    // ----- scan PDF for this project -----
-  let scanFile = null;        // Blob/File currently loaded into pdf.js
-  let scanning = false;
-  let scanError = '';
-  let scanResults = [];       // [{ color_id, code, name, hex, selected, ... }]
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok || j?.ok === false) {
+				throw new Error(j?.message || `HTTP ${res.status}`);
+			}
 
-  // pdf.js state
-  let pdfDoc = null;
-  let pageCount = 0;
-  let selectedPage = 1;
-  let thumbUrls = [];         // data URLs of page thumbnails
-  let scannedPage = null;     // which page the current scan results belong to
+			pushToast?.({
+				type: 'success',
+				msg: `Added ${c.code} to your shopping list.`
+			});
 
-  function resetPdfState() {
-    scanResults = [];
-    scanError = '';
-    pdfDoc = null;
-    pageCount = 0;
-    selectedPage = 1;
-    thumbUrls = [];
-    scannedPage = null;
-  }
+			// ⭐ NEW — mark this color as added so the button disappears
+			c._wishlistAdded = true;
+		} catch (e) {
+			pushToast?.({
+				type: 'error',
+				msg: e.message || 'Could not add to shopping list.'
+			});
+		} finally {
+			addingWishlist.delete(colorId);
+		}
+	}
 
-  async function setPdfFile(fileOrBlob) {
-    scanFile = fileOrBlob || null;
-    resetPdfState();
+	// ----- remove color from project -----
+	const inflightRemove = new Set();
 
-    if (!scanFile || !browser) return;
+	async function removeColor(c) {
+		const key = c.color_id;
+		if (inflightRemove.has(key)) return;
+		inflightRemove.add(key);
 
-    scanning = true;
-    try {
-      await ensurePdfLoaded();
-      await renderThumbnails();
-    } catch (err) {
-      console.error('PDF load error', err);
-      scanError = 'Failed to read PDF. Please check the file.';
-      scanFile = null;
-      resetPdfState();
-    } finally {
-      scanning = false;
-    }
-  }
+		const prev = colors;
+		colors = colors.filter((x) => x.color_id !== key);
 
-  function onScanFileChange(e) {
-    const f = e.currentTarget.files?.[0] ?? null;
-    setPdfFile(f);
-  }
+		try {
+			const res = await fetch(
+				`/api/projects/${encodeURIComponent(project.id)}/colors?color_id=${encodeURIComponent(
+					key
+				)}`,
+				{ method: 'DELETE' }
+			);
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok || j?.ok === false) {
+				throw new Error(j?.message || `HTTP ${res.status}`);
+			}
+			pushToast?.({
+				type: 'success',
+				msg: `Removed ${c.code} from “${project.name}”.`
+			});
+		} catch (e) {
+			colors = prev;
+			pushToast?.({
+				type: 'error',
+				msg: e.message || 'Could not remove color from project.'
+			});
+		} finally {
+			inflightRemove.delete(key);
+		}
+	}
 
-  async function ensurePdfLoaded() {
-    if (!browser || !scanFile) return;
-    if (pdfDoc) return;
+	// ----- scan PDF for this project -----
+	// ----- scan PDF for this project -----
+	let scanFile = null; // Blob/File currently loaded into pdf.js
+	let scanning = false;
+	let scanError = '';
+	let scanResults = []; // [{ color_id, code, name, hex, selected, ... }]
 
-    const pdfjsLib = await import('pdfjs-dist/build/pdf');
-    const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker?url');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
+	// pdf.js state
+	let pdfDoc = null;
+	let pageCount = 0;
+	let selectedPage = 1;
+	let thumbUrls = []; // data URLs of page thumbnails
+	let scannedPage = null; // which page the current scan results belong to
 
-    const arrayBuffer = await scanFile.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    pdfDoc = await loadingTask.promise;
-    pageCount = pdfDoc.numPages || 0;
+	function resetPdfState() {
+		scanResults = [];
+		scanError = '';
+		pdfDoc = null;
+		pageCount = 0;
+		selectedPage = 1;
+		thumbUrls = [];
+		scannedPage = null;
+	}
 
-    if (!selectedPage || selectedPage < 1) {
-      selectedPage = 1;
-    } else if (selectedPage > pageCount) {
-      selectedPage = pageCount;
-    }
-  }
+	async function setPdfFile(fileOrBlob) {
+		scanFile = fileOrBlob || null;
+		resetPdfState();
 
-  async function renderThumbnails() {
-    if (!browser || !pdfDoc || !pageCount) return;
+		if (!scanFile || !browser) return;
 
-    const urls = new Array(pageCount).fill(null);
-    const maxWidth = 160;
+		scanning = true;
+		try {
+			await ensurePdfLoaded();
+			await renderThumbnails();
+		} catch (err) {
+			console.error('PDF load error', err);
+			scanError = 'Failed to read PDF. Please check the file.';
+			scanFile = null;
+			resetPdfState();
+		} finally {
+			scanning = false;
+		}
+	}
 
-    for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
-      try {
-        const page = await pdfDoc.getPage(pageNum);
+	function onScanFileChange(e) {
+		const f = e.currentTarget.files?.[0] ?? null;
+		setPdfFile(f);
+	}
 
-        const baseViewport = page.getViewport({ scale: 1 });
-        const scale = Math.min(1, maxWidth / baseViewport.width);
-        const viewport = page.getViewport({ scale });
+	async function ensurePdfLoaded() {
+		if (!browser || !scanFile) return;
+		if (pdfDoc) return;
 
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+		const pdfjsLib = await import('pdfjs-dist/build/pdf');
+		const pdfjsWorker = await import('pdfjs-dist/build/pdf.worker?url');
+		pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
 
-        await page
-          .render({
-            canvasContext: ctx,
-            viewport
-          })
-          .promise;
+		const arrayBuffer = await scanFile.arrayBuffer();
+		const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+		pdfDoc = await loadingTask.promise;
+		pageCount = pdfDoc.numPages || 0;
 
-        urls[pageNum - 1] = canvas.toDataURL('image/png');
-      } catch (err) {
-        console.error('thumbnail render error for page', pageNum, err);
-      }
-    }
+		if (!selectedPage || selectedPage < 1) {
+			selectedPage = 1;
+		} else if (selectedPage > pageCount) {
+			selectedPage = pageCount;
+		}
+	}
 
-    thumbUrls = urls;
-  }
+	async function renderThumbnails() {
+		if (!browser || !pdfDoc || !pageCount) return;
 
-  async function getSelectedPageData() {
-    if (!browser) throw new Error('PDF scanning only works in the browser.');
-    if (!scanFile) throw new Error('No PDF loaded.');
+		const urls = new Array(pageCount).fill(null);
+		const maxWidth = 160;
 
-    await ensurePdfLoaded();
+		for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+			try {
+				const page = await pdfDoc.getPage(pageNum);
 
-    if (!pdfDoc || !pageCount) {
-      throw new Error('PDF not loaded.');
-    }
+				const baseViewport = page.getViewport({ scale: 1 });
+				const scale = Math.min(1, maxWidth / baseViewport.width);
+				const viewport = page.getViewport({ scale });
 
-    const pageNum = Math.min(Math.max(Number(selectedPage) || 1, 1), pageCount);
-    const page = await pdfDoc.getPage(pageNum);
-    const content = await page.getTextContent();
+				const canvas = document.createElement('canvas');
+				const ctx = canvas.getContext('2d');
+				canvas.width = viewport.width;
+				canvas.height = viewport.height;
 
-    const items = content.items.map((it) => ({
-      str: it.str,
-      x: it.transform?.[4] ?? 0,
-      y: it.transform?.[5] ?? 0
-    }));
+				await page.render({
+					canvasContext: ctx,
+					viewport
+				}).promise;
 
-    const text = items.map((i) => i.str || '').join(' ');
-    return { text, items, pageNum };
-  }
+				urls[pageNum - 1] = canvas.toDataURL('image/png');
+			} catch (err) {
+				console.error('thumbnail render error for page', pageNum, err);
+			}
+		}
 
-  async function handleScan(e) {
-    e?.preventDefault?.();
+		thumbUrls = urls;
+	}
 
-    if (!scanFile) {
-      scanError = 'Load a PDF first (saved or local).';
-      return;
-    }
-    if (!browser) {
-      scanError = 'PDF scanning only works in the browser.';
-      return;
-    }
+	async function getSelectedPageData() {
+		if (!browser) throw new Error('PDF scanning only works in the browser.');
+		if (!scanFile) throw new Error('No PDF loaded.');
 
-    scanning = true;
-    scanError = '';
-    scanResults = [];
-    scannedPage = null;
+		await ensurePdfLoaded();
 
-    try {
-      const { text, items, pageNum } = await getSelectedPageData();
+		if (!pdfDoc || !pageCount) {
+			throw new Error('PDF not loaded.');
+		}
 
-      const res = await fetch('/api/scan-dmc', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text, items })
-      });
+		const pageNum = Math.min(Math.max(Number(selectedPage) || 1, 1), pageCount);
+		const page = await pdfDoc.getPage(pageNum);
+		const content = await page.getTextContent();
 
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(`Server error (${res.status}): ${msg}`);
-      }
+		const items = content.items.map((it) => ({
+			str: it.str,
+			x: it.transform?.[4] ?? 0,
+			y: it.transform?.[5] ?? 0
+		}));
 
-      const data = await res.json();
-      scannedPage = pageNum;
+		const text = items.map((i) => i.str || '').join(' ');
+		return { text, items, pageNum };
+	}
 
-      const raw = [
-        ...(Array.isArray(data.have) ? data.have : []),
-        ...(Array.isArray(data.missing) ? data.missing : [])
-      ];
+	async function handleScan(e) {
+		e?.preventDefault?.();
 
-      scanResults = raw.map((c) => ({
-        ...c,
-        selected: true
-      }));
-    } catch (err) {
-      console.error('scan error', err);
-      scanError = err?.message || 'Scan failed.';
-    } finally {
-      scanning = false;
-    }
-  }
+		if (!scanFile) {
+			scanError = 'Load a PDF first (saved or local).';
+			return;
+		}
+		if (!browser) {
+			scanError = 'PDF scanning only works in the browser.';
+			return;
+		}
 
-  async function scanSavedPdf() {
-    scanning = true;
-    scanError = '';
-    try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(project.id)}/file`
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          throw new Error('Saved PDF not found in storage.');
-        }
-        const msg = await res.text();
-        throw new Error(`HTTP ${res.status}: ${msg}`);
-      }
-      const blob = await res.blob();
-      await setPdfFile(blob);
-    } catch (err) {
-      console.error('scanSavedPdf error', err);
-      scanError = err?.message || 'Could not load saved PDF.';
-    } finally {
-      scanning = false;
-    }
-  }
+		scanning = true;
+		scanError = '';
+		scanResults = [];
+		scannedPage = null;
 
-  function selectPage(pageNum) {
-    selectedPage = pageNum;
-    // clear previous results, they belonged to another page
-    scanResults = [];
-    scannedPage = null;
-  }
+		try {
+			const { text, items, pageNum } = await getSelectedPageData();
 
-  function toggleResultSelection(res) {
-    res.selected = !res.selected;
-    // force Svelte to notice
-    scanResults = [...scanResults];
-  }
+			const res = await fetch('/api/scan-dmc', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ text, items })
+			});
 
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(`Server error (${res.status}): ${msg}`);
+			}
 
+			const data = await res.json();
+			scannedPage = pageNum;
 
-  // ----- add scanned colors to project -----
-  const inflightAddAll = new Set();
+			const raw = [
+				...(Array.isArray(data.have) ? data.have : []),
+				...(Array.isArray(data.missing) ? data.missing : [])
+			];
 
-  async function addSelectedToProject() {
-    const ids = scanResults
-      .filter((r) => r.selected)
-      .map((r) => r.color_id)
-      .filter(Boolean);
+			scanResults = raw.map((c) => ({
+				...c,
+				selected: true
+			}));
+		} catch (err) {
+			console.error('scan error', err);
+			scanError = err?.message || 'Scan failed.';
+		} finally {
+			scanning = false;
+		}
+	}
 
-    if (!ids.length) {
-      pushToast?.({ type: 'warning', msg: 'No colors selected.' });
-      return;
-    }
+	async function scanSavedPdf() {
+		scanning = true;
+		scanError = '';
+		try {
+			const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/file`);
+			if (!res.ok) {
+				if (res.status === 404) {
+					throw new Error('Saved PDF not found in storage.');
+				}
+				const msg = await res.text();
+				throw new Error(`HTTP ${res.status}: ${msg}`);
+			}
+			const blob = await res.blob();
+			await setPdfFile(blob);
+		} catch (err) {
+			console.error('scanSavedPdf error', err);
+			scanError = err?.message || 'Could not load saved PDF.';
+		} finally {
+			scanning = false;
+		}
+	}
 
-    const key = project.id;
-    if (inflightAddAll.has(key)) return;
-    inflightAddAll.add(key);
+	function selectPage(pageNum) {
+		selectedPage = pageNum;
+		// clear previous results, they belonged to another page
+		scanResults = [];
+		scannedPage = null;
+	}
 
-    try {
-      const res = await fetch(
-        `/api/projects/${encodeURIComponent(project.id)}/colors`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ color_ids: ids })
-        }
-      );
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || j?.ok === false) {
-        throw new Error(j?.message || `HTTP ${res.status}`);
-      }
+	function toggleResultSelection(res) {
+		res.selected = !res.selected;
+		// force Svelte to notice
+		scanResults = [...scanResults];
+	}
 
-      // Merge into project colors list
-      const existingIds = new Set(colors.map((c) => c.color_id));
-      const newOnes = scanResults.filter(
-        (r) => r.selected && !existingIds.has(r.color_id)
-      );
-      colors = [...colors, ...newOnes];
+	// ----- add scanned colors to project -----
+	const inflightAddAll = new Set();
 
-      pushToast?.({
-        type: 'success',
-        msg: `Added ${ids.length} color${ids.length === 1 ? '' : 's'} to “${
-          project.name
-        }”.`
-      });
-    } catch (e) {
-      pushToast?.({
-        type: 'error',
-        msg: e.message || 'Could not add colors to project.'
-      });
-    } finally {
-      inflightAddAll.delete(key);
-    }
-  }
+	async function addSelectedToProject() {
+		const ids = scanResults
+			.filter((r) => r.selected)
+			.map((r) => r.color_id ?? r.colorId ?? r.id)
+			.filter(Boolean);
+
+		if (!ids.length) {
+			pushToast?.({ type: 'warning', msg: 'No colors selected.' });
+			return;
+		}
+
+		const key = project.id;
+		if (inflightAddAll.has(key)) return;
+		inflightAddAll.add(key);
+
+		try {
+			const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/colors`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ color_ids: ids })
+			});
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok || j?.ok === false) {
+				throw new Error(j?.message || `HTTP ${res.status}`);
+			}
+
+			// Merge into project colors list
+			const existingIds = new Set(colors.map((c) => c.color_id));
+			const newOnes = scanResults.filter((r) => r.selected && !existingIds.has(r.color_id));
+			colors = [...colors, ...newOnes];
+
+			pushToast?.({
+				type: 'success',
+				msg: `Added ${ids.length} color${ids.length === 1 ? '' : 's'} to “${project.name}”.`
+			});
+		} catch (e) {
+			pushToast?.({
+				type: 'error',
+				msg: e.message || 'Could not add colors to project.'
+			});
+		} finally {
+			inflightAddAll.delete(key);
+		}
+	}
 </script>
 
 <svelte:head>
-  <title>{project.name} • ThreadIndex</title>
+	<title>{project.name} • ThreadIndex</title>
 </svelte:head>
 
 <section class="proj-shell">
-  <header class="proj-header">
-    <div>
-      <h1>{project.name}</h1>
-      <p class="subtitle">
-        Colors assigned to this project, plus PDF scanning just for “{project.name}”.
-      </p>
-    </div>
-    <a class="back-link" href="/inventory">← Back to My threads</a>
-  </header>
+	<header class="proj-header">
+		<div>
+			<h1>{project.name}</h1>
+			<p class="subtitle">
+				Colors assigned to this project, plus PDF scanning just for “{project.name}”.
+			</p>
+		</div>
+		<a class="back-link" href="/inventory">← Back to My threads</a>
+	</header>
 
-  <!-- CURRENT COLORS IN PROJECT -->
-  <section class="proj-section">
-    <h2>Colors in this project</h2>
-    {#if !colors.length}
-      <p class="empty">
-        No colors linked yet. Scan a PDF below or add them from your stash.
-      </p>
-    {:else}
-      <table class="proj-table">
-        <colgroup>
-          <col style="width:50px" />
-          <col style="width:90px" />
-          <col />
-          <col style="width:80px" />
-          <col style="width:120px" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>Swatch</th>
-            <th>Code</th>
-            <th>Name</th>
-            <th>Have</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each colors as c}
-            <tr>
-              <td>
-                <span class="sw" style={`--c:${c.hex};`}></span>
-              </td>
-              <td class="code">{c.code}</td>
-              <td class="name">{c.name}</td>
-              <td class="qty">
-                {c.quantity ?? 0}
-              </td>
-              <td class="actions">
-                <button class="btn danger" on:click={() => removeColor(c)}>
-                  Remove
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-  </section>
+	<!-- CURRENT COLORS IN PROJECT -->
+	<section class="proj-section">
+		<h2>Colors in this project</h2>
+		{#if !colors.length}
+			<p class="empty">No colors linked yet. Scan a PDF below or add them from your stash.</p>
+		{:else}
+			<table class="proj-table">
+				<colgroup>
+					<col style="width:50px" />
+					<col style="width:90px" />
+					<col />
+					<col style="width:80px" />
+					<col style="width:120px" />
+				</colgroup>
+				<thead>
+					<tr>
+						<th>Swatch</th>
+						<th>Code</th>
+						<th>Name</th>
+						<th>Have</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each colors as c}
+						<tr>
+							<td>
+								<span class="sw" style={`--c:${c.hex};`}></span>
+							</td>
+							<td class="code">{c.code}</td>
+							<td class="name">{c.name}</td>
+							<td class="have-cell">
+								{#if getHave(c) > 0}
+									{getHave(c)}
+								{:else}
+									0
 
-  <!-- SCAN PDF FOR THIS PROJECT -->
-   <section class="proj-section">
-    <h2>Scan a PDF for this project</h2>
+									{#if !c._wishlistAdded}
+										<button
+											class="btn tiny wishlist-btn"
+											disabled={addingWishlist.has(c.color_id || c.id)}
+											on:click={() => addColorToWishlist(c)}
+										>
+											Add to shopping list
+										</button>
+									{:else}
+										<span class="added-label">Added ✓</span>
+									{/if}
+								{/if}
+							</td>
 
-    <form class="scan-form" on:submit|preventDefault={handleScan}>
-      <label class="scan-label">
-        <span>PDF file</span>
-        <input
-          type="file"
-          accept="application/pdf"
-          on:change={onScanFileChange}
-        />
-      </label>
+							<td class="actions">
+								<button class="btn danger" on:click={() => removeColor(c)}> Remove </button>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		{/if}
+	</section>
 
-      <div class="scan-buttons">
-        <button
-          class="btn primary"
-          type="button"
-          on:click={handleScan}
-          disabled={scanning || !scanFile}
-        >
-          {#if scanning}Scanning…{:else}Scan selected page{/if}
-        </button>
+	<!-- SCAN PDF FOR THIS PROJECT -->
+	<section class="proj-section">
+		<h2>Scan a PDF for this project</h2>
 
-        <button
-          class="btn ghost"
-          type="button"
-          disabled={scanning}
-          on:click={scanSavedPdf}
-        >
-          Load saved PDF
-        </button>
-      </div>
+		<form class="scan-form" on:submit|preventDefault={handleScan}>
+			<label class="scan-label">
+				<span>PDF file</span>
+				<input type="file" accept="application/pdf" on:change={onScanFileChange} />
+			</label>
 
-      {#if scanError}
-        <p class="scan-error">{scanError}</p>
-      {/if}
-    </form>
+			<div class="scan-buttons">
+				<button
+					class="btn primary"
+					type="button"
+					on:click={handleScan}
+					disabled={scanning || !scanFile}
+				>
+					{#if scanning}Scanning…{:else}Scan selected page{/if}
+				</button>
 
-    {#if pageCount > 0}
-      <div class="thumbs-label">
-        Click a page to select which one to scan:
-      </div>
-      <div class="thumb-grid">
-        {#each Array(pageCount) as _, i}
-          {#if thumbUrls[i]}
-            <button
-              type="button"
-              class="thumb-card"
-              class:thumb-selected={selectedPage === i + 1}
-              on:click={() => selectPage(i + 1)}
-            >
-              <img src={thumbUrls[i]} alt={`Page ${i + 1}`} />
-              <div class="thumb-caption">
-                Page {i + 1}
-                {#if scannedPage === i + 1}
-                  • scanned
-                {/if}
-              </div>
-            </button>
-          {:else}
-            <button
-              type="button"
-              class="thumb-card thumb-loading"
-              class:thumb-selected={selectedPage === i + 1}
-              on:click={() => selectPage(i + 1)}
-            >
-              <div class="thumb-placeholder">Page {i + 1}</div>
-            </button>
-          {/if}
-        {/each}
-      </div>
-    {/if}
+				<button class="btn ghost" type="button" disabled={scanning} on:click={scanSavedPdf}>
+					Load saved PDF
+				</button>
+			</div>
 
-    {#if scanResults.length}
-      <div class="scan-results">
-        <div class="scan-header-row">
-          <h3>
-            Detected colors
-            {#if scannedPage !== null}
-              (page {scannedPage})
-            {/if}
-          </h3>
-          <button
-            class="btn primary small"
-            type="button"
-            on:click={addSelectedToProject}
-          >
-            Add selected to project
-          </button>
-        </div>
+			{#if scanError}
+				<p class="scan-error">{scanError}</p>
+			{/if}
+		</form>
 
-        <table class="proj-table">
-          <colgroup>
-            <col style="width:40px" />
-            <col style="width:50px" />
-            <col style="width:90px" />
-            <col />
-          </colgroup>
-          <thead>
-            <tr>
-              <th></th>
-              <th>Sw</th>
-              <th>Code</th>
-              <th>Name</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each scanResults as r}
-              <tr>
-                <td>
-                  <input
-                    type="checkbox"
-                    bind:checked={r.selected}
-                    on:change={() => toggleResultSelection(r)}
-                  />
-                </td>
-                <td>
-                  <span class="sw" style={`--c:${r.hex};`}></span>
-                </td>
-                <td class="code">{r.code}</td>
-                <td class="name">{r.name}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
-  </section>
+		{#if pageCount > 0}
+			<div class="thumbs-label">Click a page to select which one to scan:</div>
+			<div class="thumb-grid">
+				{#each Array(pageCount) as _, i}
+					{#if thumbUrls[i]}
+						<button
+							type="button"
+							class="thumb-card"
+							class:thumb-selected={selectedPage === i + 1}
+							on:click={() => selectPage(i + 1)}
+						>
+							<img src={thumbUrls[i]} alt={`Page ${i + 1}`} />
+							<div class="thumb-caption">
+								Page {i + 1}
+								{#if scannedPage === i + 1}
+									• scanned
+								{/if}
+							</div>
+						</button>
+					{:else}
+						<button
+							type="button"
+							class="thumb-card thumb-loading"
+							class:thumb-selected={selectedPage === i + 1}
+							on:click={() => selectPage(i + 1)}
+						>
+							<div class="thumb-placeholder">Page {i + 1}</div>
+						</button>
+					{/if}
+				{/each}
+			</div>
+		{/if}
+
+		{#if scanResults.length}
+			<div class="scan-results">
+				<div class="scan-header-row">
+					<h3>
+						Detected colors
+						{#if scannedPage !== null}
+							(page {scannedPage})
+						{/if}
+					</h3>
+					<button class="btn primary small" type="button" on:click={addSelectedToProject}>
+						Add selected to project
+					</button>
+				</div>
+
+				<table class="proj-table">
+					<colgroup>
+						<col style="width:40px" />
+						<col style="width:50px" />
+						<col style="width:90px" />
+						<col />
+					</colgroup>
+					<thead>
+						<tr>
+							<th></th>
+							<th>Sw</th>
+							<th>Code</th>
+							<th>Name</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each scanResults as r}
+							<tr>
+								<td>
+									<input
+										type="checkbox"
+										bind:checked={r.selected}
+										on:change={() => toggleResultSelection(r)}
+									/>
+								</td>
+								<td>
+									<span class="sw" style={`--c:${r.hex};`}></span>
+								</td>
+								<td class="code">{r.code}</td>
+								<td class="name">{r.name}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
 </section>
 
 <style>
+	.proj-shell {
+		width: min(1200px, 96vw);
+		margin: 18px auto 24px;
+	}
 
-  .proj-shell {
-    width: min(1200px, 96vw);
-    margin: 18px auto 24px;
-  }
+	.proj-header {
+		display: flex;
+		justify-content: space-between;
+		gap: 16px;
+		align-items: flex-end;
+		margin-bottom: 16px;
+	}
 
-  .proj-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    align-items: flex-end;
-    margin-bottom: 16px;
-  }
+	.proj-header h1 {
+		margin: 0;
+		font-size: 1.5rem;
+	}
 
-  .proj-header h1 {
-    margin: 0;
-    font-size: 1.5rem;
-  }
+	.subtitle {
+		margin: 4px 0 0;
+		font-size: 0.9rem;
+		color: color-mix(in oklab, CanvasText 70%, transparent);
+	}
 
-  .subtitle {
-    margin: 4px 0 0;
-    font-size: 0.9rem;
-    color: color-mix(in oklab, CanvasText 70%, transparent);
-  }
+	.back-link {
+		font-size: 0.85rem;
+		text-decoration: none;
+		color: color-mix(in oklab, CanvasText 80%, transparent);
+	}
 
-  .back-link {
-    font-size: 0.85rem;
-    text-decoration: none;
-    color: color-mix(in oklab, CanvasText 80%, transparent);
-  }
+	.proj-section {
+		margin-top: 16px;
+	}
 
-  .proj-section {
-    margin-top: 16px;
-  }
+	.proj-section h2 {
+		margin: 0 0 6px;
+		font-size: 1.1rem;
+	}
 
-  .proj-section h2 {
-    margin: 0 0 6px;
-    font-size: 1.1rem;
-  }
+	.empty {
+		font-size: 0.9rem;
+		color: color-mix(in oklab, CanvasText 72%, transparent);
+	}
 
-  .empty {
-    font-size: 0.9rem;
-    color: color-mix(in oklab, CanvasText 72%, transparent);
-  }
+	.proj-table {
+		width: 100%;
+		border-collapse: separate;
+		border-spacing: 0;
+		margin-top: 6px;
+	}
 
-  .proj-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    margin-top: 6px;
-  }
+	.proj-table thead th {
+		text-align: left;
+		padding: 8px 10px;
+		background: color-mix(in oklab, Canvas 96%, transparent);
+	}
 
-  .proj-table thead th {
-    text-align: left;
-    padding: 8px 10px;
-    background: color-mix(in oklab, Canvas 96%, transparent);
-  }
+	.proj-table tbody td {
+		padding: 8px 10px;
+		border-top: 1px solid color-mix(in oklab, CanvasText 10%, transparent);
+	}
 
-  .proj-table tbody td {
-    padding: 8px 10px;
-    border-top: 1px solid color-mix(in oklab, CanvasText 10%, transparent);
-  }
+	.proj-table tbody tr:nth-child(even) {
+		background: color-mix(in oklab, Canvas 96%, transparent);
+	}
 
-  .proj-table tbody tr:nth-child(even) {
-    background: color-mix(in oklab, Canvas 96%, transparent);
-  }
+	.sw {
+		display: inline-block;
+		width: 22px;
+		height: 22px;
+		border-radius: 999px;
+		background: var(--c, #bbb);
+		border: 1px solid color-mix(in oklab, CanvasText 18%, transparent);
+	}
 
-  .sw {
-    display: inline-block;
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    background: var(--c, #bbb);
-    border: 1px solid color-mix(in oklab, CanvasText 18%, transparent);
-  }
+	.code {
+		font-variant-numeric: tabular-nums;
+		text-align: center;
+	}
 
-  .code {
-    font-variant-numeric: tabular-nums;
-    text-align: center;
-  }
+	.name {
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		overflow: hidden;
+	}
 
-  .name {
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-  }
+	.qty {
+		text-align: center;
+	}
 
-  .qty {
-    text-align: center;
-  }
+	.actions {
+		text-align: right;
+	}
 
-  .actions {
-    text-align: right;
-  }
+	.btn {
+		height: 32px;
+		padding: 0 10px;
+		border-radius: 8px;
+		cursor: pointer;
+		border: 1px solid color-mix(in oklab, CanvasText 16%, transparent);
+		background: color-mix(in oklab, Canvas 98%, transparent);
+	}
 
-  .btn {
-    height: 32px;
-    padding: 0 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    border: 1px solid color-mix(in oklab, CanvasText 16%, transparent);
-    background: color-mix(in oklab, Canvas 98%, transparent);
-  }
+	.btn.primary {
+		border-radius: 999px;
+		background: color-mix(in oklab, #5bbcff 18%, Canvas 96%);
+	}
 
-  .btn.primary {
-    border-radius: 999px;
-    background: color-mix(in oklab, #5bbcff 18%, Canvas 96%);
-  }
+	.btn.primary.small {
+		height: 30px;
+		padding: 0 12px;
+	}
 
-  .btn.primary.small {
-    height: 30px;
-    padding: 0 12px;
-  }
+	.btn.danger {
+		border-radius: 999px;
+	}
 
-  .btn.danger {
-    border-radius: 999px;
-  }
+	.scan-buttons {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
 
-    .scan-buttons {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
+	.btn.ghost {
+		background: transparent;
+	}
 
-  .btn.ghost {
-    background: transparent;
-  }
+	.scan-form {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+		margin-bottom: 8px;
+	}
 
-  .scan-form {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 8px;
-  }
+	.scan-label span {
+		display: block;
+		font-size: 0.85rem;
+		margin-bottom: 2px;
+	}
 
-  .scan-label span {
-    display: block;
-    font-size: 0.85rem;
-    margin-bottom: 2px;
-  }
+	.scan-label input[type='file'] {
+		font-size: 0.85rem;
+	}
 
-  .scan-label input[type='file'] {
-    font-size: 0.85rem;
-  }
+	.scan-error {
+		font-size: 0.85rem;
+		color: #c33;
+	}
 
-  .scan-error {
-    font-size: 0.85rem;
-    color: #c33;
-  }
+	.scan-results {
+		margin-top: 8px;
+	}
 
-  .scan-results {
-    margin-top: 8px;
-  }
+	.scan-header-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 4px;
+	}
 
-  .scan-header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
-  }
+	.scan-header-row h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
 
-  .scan-header-row h3 {
-    margin: 0;
-    font-size: 1rem;
-  }
+	.thumbs-label {
+		margin-top: 8px;
+		font-size: 0.9rem;
+		color: color-mix(in oklab, CanvasText 70%, transparent);
+	}
 
-  .thumbs-label {
-    margin-top: 8px;
-    font-size: 0.9rem;
-    color: color-mix(in oklab, CanvasText 70%, transparent);
-  }
+	.thumb-grid {
+		margin-top: 6px;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 0.6rem;
+	}
 
-  .thumb-grid {
-    margin-top: 6px;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.6rem;
-  }
+	.thumb-card {
+		padding: 0;
+		border-radius: 10px;
+		border: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
+		background: color-mix(in oklab, Canvas 98%, transparent);
+		cursor: pointer;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		transition:
+			transform 0.08s ease-out,
+			box-shadow 0.08s ease-out,
+			border-color 0.08s ease-out;
+	}
 
-  .thumb-card {
-    padding: 0;
-    border-radius: 10px;
-    border: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
-    background: color-mix(in oklab, Canvas 98%, transparent);
-    cursor: pointer;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    transition:
-      transform 0.08s ease-out,
-      box-shadow 0.08s ease-out,
-      border-color 0.08s ease-out;
-  }
+	.thumb-card img {
+		display: block;
+		width: 100%;
+		height: auto;
+		background: #fff;
+	}
 
-  .thumb-card img {
-    display: block;
-    width: 100%;
-    height: auto;
-    background: #fff;
-  }
+	.thumb-caption {
+		padding: 0.3rem 0.5rem;
+		font-size: 0.8rem;
+		color: color-mix(in oklab, CanvasText 70%, transparent);
+		text-align: center;
+	}
 
-  .thumb-caption {
-    padding: 0.3rem 0.5rem;
-    font-size: 0.8rem;
-    color: color-mix(in oklab, CanvasText 70%, transparent);
-    text-align: center;
-  }
+	.thumb-card:hover {
+		transform: translateY(-1px);
+		box-shadow: var(--shadow-1, 0 2px 10px rgba(0, 0, 0, 0.25));
+	}
 
-  .thumb-card:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-1, 0 2px 10px rgba(0,0,0,.25));
-  }
+	.thumb-selected {
+		border-color: var(--accent-2, #f0a132);
+		box-shadow: 0 0 0 1px var(--accent-2, #f0a132);
+	}
 
-  .thumb-selected {
-    border-color: var(--accent-2, #f0a132);
-    box-shadow: 0 0 0 1px var(--accent-2, #f0a132);
-  }
+	.thumb-loading .thumb-placeholder {
+		min-height: 110px;
+		display: grid;
+		place-items: center;
+		font-size: 0.8rem;
+		color: color-mix(in oklab, CanvasText 70%, transparent);
+	}
+	.have-cell {
+		white-space: nowrap;
+	}
 
-  .thumb-loading .thumb-placeholder {
-    min-height: 110px;
-    display: grid;
-    place-items: center;
-    font-size: 0.8rem;
-    color: color-mix(in oklab, CanvasText 70%, transparent);
-  }
+	.wishlist-btn {
+		margin-left: 0.5rem;
+		padding: 0.15rem 0.5rem;
+		border-radius: 999px;
+		border: 1px solid color-mix(in oklab, CanvasText 14%, transparent);
+		background: color-mix(in oklab, Canvas 96%, transparent);
+		font-size: 0.75rem;
+		cursor: pointer;
+	}
 
+	.wishlist-btn[disabled] {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+  .added-label {
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
 </style>

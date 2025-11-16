@@ -196,13 +196,17 @@ export const POST = async ({ request, locals }) => {
   for (const row of rows) {
     const quantity = row.quantity ?? 0;
     const entry = {
-       id: row.id,
-      colorId: row.color_id,
+      // Always expose a canonical color_id
+      color_id: row.color_id ?? row.id,
+      // Keep these around too if you want, but not required
+      id: row.color_id ?? row.id,
+      colorId: row.color_id ?? row.id,
+
       code: row.code,
       name: row.name,
       quantity
-
     };
+
 
     seenCodes.add(row.code);
 

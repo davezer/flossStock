@@ -1,9 +1,8 @@
-// src/routes/api/inventory/[color_id]/+server.js
+// src/routes/api/colors/[color_id]/projects/+server.js
 import { json, error } from '@sveltejs/kit';
 import { getLucia } from '$lib/server/auth/lucia.js';
 
-// --- auth helpers, same pattern as other APIs ---
-
+// Re-use the same helper you have elsewhere
 async function resolveUser({ locals, cookies, platform }) {
   if (locals?.user) return locals.user;
 
@@ -24,104 +23,39 @@ async function resolveUser({ locals, cookies, platform }) {
   }
 }
 
-async function requireUser(ctx) {
-  const user = await resolveUser(ctx);
-  if (!user) throw error(401, 'Unauthorized');
-  return user;
-}
-
-// ---------- PATCH: update quantity and/or notes ----------
-export async function PATCH(event) {
-  const { platform, locals, cookies, params, request } = event;
+export async function GET({ params, locals, cookies, platform }) {
   const db = platform?.env?.DB;
-  if (!db) throw error(500, 'No DB binding');
+  if (!db) throw error(500, 'Database not available');
 
-  const user = await requireUser({ locals, cookies, platform });
-  const colorId = String(params.color_id ?? '').trim();
-  if (!colorId) throw error(400, 'color_id required');
-
-  const body = await request.json().catch(() => ({}));
-
-  const hasQuantity = 'quantity' in body;
-  const hasNotes = 'notes' in body;
-
-  if (!hasQuantity && !hasNotes) {
-    throw error(400, 'quantity or notes required');
+  const user = await resolveUser({ locals, cookies, platform });
+  if (!user) {
+    // for the inventory page we just want "no projects" when logged out
+    return json({ ok: true, projects: [] }, { status: 200 });
   }
 
-  const sets = [];
-  const binds = [];
-
-  if (hasQuantity) {
-    const qty = Math.max(0, Number(body.quantity || 0) || 0);
-    sets.push('quantity = ?');
-    binds.push(qty);
+  const colorId = params.color_id;
+  if (!colorId) {
+    return json({ ok: false, error: 'color_id required' }, { status: 400 });
   }
 
-  if (hasNotes) {
-    // allow null to clear notes
-    sets.push('notes = ?');
-    binds.push(body.notes ?? null);
-  }
-
-  // always bump updated_at
-  sets.push('updated_at = unixepoch()');
-
-  const sql = `
-    UPDATE inventory
-    SET ${sets.join(', ')}
-    WHERE user_id = ? AND color_id = ?
-  `;
-
-  binds.push(user.id, colorId);
-
-  await db.prepare(sql).bind(...binds).run();
-
-  // return the updated row (optional but handy)
+  // color_id will be something like "dmc:default:310"
+  // project_color schema:
+  //   project_id TEXT, color_id TEXT, created_at INTEGER ...
   const { results } = await db
     .prepare(
       `
-      SELECT i.user_id, i.color_id, i.quantity, i.notes, i.updated_at,
-             c.code, c.name, c.hex
-      FROM inventory i
-      JOIN color c ON c.id = i.color_id
-      WHERE i.user_id = ? AND i.color_id = ?
-      `
+      SELECT p.id, p.name
+      FROM project_color AS pc
+      JOIN project AS p ON p.id = pc.project_id
+      WHERE pc.color_id = ? AND p.user_id = ?
+      ORDER BY p.created_at DESC
+    `
     )
-    .bind(user.id, colorId)
+    .bind(colorId, user.id)
     .all();
 
-  const row = results?.[0] ?? null;
-
   return json({
     ok: true,
-    item: row
-  });
-}
-
-// ---------- DELETE: remove a color from inventory ----------
-export async function DELETE(event) {
-  const { platform, locals, cookies, params } = event;
-  const db = platform?.env?.DB;
-  if (!db) throw error(500, 'No DB binding');
-
-  const user = await requireUser({ locals, cookies, platform });
-  const colorId = String(params.color_id ?? '').trim();
-  if (!colorId) throw error(400, 'color_id required');
-
-  await db
-    .prepare(
-      `
-      DELETE FROM inventory
-      WHERE user_id = ? AND color_id = ?
-      `
-    )
-    .bind(user.id, colorId)
-    .run();
-
-  return json({
-    ok: true,
-    color_id: colorId,
-    message: 'Inventory row deleted'
+    projects: results ?? []
   });
 }
