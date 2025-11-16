@@ -29,9 +29,12 @@
 			"bucket_name": "flossstock-avatars",
 			"binding": "flossstock_avatars",
 			"remote": true
+		},
+		{
+			"bucket_name": "flossstock-projects",
+			"binding": "flossstock_projects",
+			"remote": true
 		}
-	],
-
+		
+	]
 }
-
-

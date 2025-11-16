@@ -2,6 +2,7 @@
 import { json, error } from '@sveltejs/kit';
 import { getLucia } from '$lib/server/auth/lucia.js';
 
+
 /** Resolve the current user:
  *  Prefer locals.user (set by hooks). If missing, validate cookie here and backfill locals.
  */
@@ -32,6 +33,9 @@ async function requireUser(ctx) {
 }
 
 /** GET: list items (optional ?q=) */
+// src/routes/api/inventory/+server.js
+
+// src/routes/api/inventory/+server.js
 export async function GET(event) {
   const { platform, url } = event;
   const db = platform?.env?.DB;
@@ -42,24 +46,45 @@ export async function GET(event) {
 
   const q = (url.searchParams.get('q') || '').trim();
   const where = q ? 'AND (c.code LIKE ? OR c.name LIKE ?)' : '';
-  const binds = q ? [user.id, `%${q}%`, `%${q}%`] : [user.id];
+
+  // bind order matches the SQL below:
+  //   1) p.user_id in subquery
+  //   2) i.user_id in main WHERE
+  //   3–4) optional search params
+  const binds = q
+    ? [user.id, user.id, `%${q}%`, `%${q}%`]
+    : [user.id, user.id];
 
   const sql = `
     SELECT
-      i.color_id       AS id,
+      i.color_id                         AS id,
       i.color_id,
-      i.qty            AS qty,
+      i.qty                              AS qty,
       i.notes,
       i.updated_at,
       c.code,
       c.name,
-      c.hex
+      c.hex,
+      COALESCE(pc.project_count, 0)      AS used_in_projects
     FROM inventory i
-    JOIN color c ON c.id = i.color_id
+    JOIN color c
+      ON c.id = i.color_id
+    LEFT JOIN (
+      SELECT
+        pc.color_id           AS color_id,
+        COUNT(*)              AS project_count
+      FROM project_color pc
+      JOIN project p
+        ON p.id = pc.project_id
+      WHERE p.user_id = ?
+      GROUP BY pc.color_id
+    ) pc
+      ON pc.color_id = i.color_id
     WHERE i.user_id = ?
     ${where}
     ORDER BY CAST(c.code AS INTEGER) ASC, c.code ASC
   `;
+
   const rows = await db.prepare(sql).bind(...binds).all();
 
   return json({
@@ -68,6 +93,8 @@ export async function GET(event) {
     message: 'OK'
   });
 }
+
+
 
 /** POST: upsert single or batch
  * Accept one of:
@@ -104,13 +131,14 @@ export async function POST(event) {
         const delta = Math.trunc(deltaRaw);
 
         await db.prepare(`
-          INSERT INTO inventory (user_id, color_id, qty, notes, updated_at)
+          INSERT INTO inventory (user_id, color_id, quantity, notes, updated_at)
           VALUES (?, ?, ?, ?, unixepoch())
           ON CONFLICT(user_id, color_id)
-          DO UPDATE SET qty       = MAX(0, inventory.qty + excluded.qty),
-                        notes     = COALESCE(excluded.notes, inventory.notes),
-                        updated_at = unixepoch()
-        `).bind(user.id, colorId, delta, notes).run();
+          DO UPDATE SET
+            quantity   = quantity + excluded.quantity,
+            notes      = COALESCE(excluded.notes, notes),
+            updated_at = unixepoch()
+        `).bind(user.id, colorId, 1, notes, delta).run();
       } else {
         const raw = Number(it.qty ?? it.quantity); // accept old "quantity"
         if (!Number.isFinite(raw)) throw new Error('qty/quantity must be a number');

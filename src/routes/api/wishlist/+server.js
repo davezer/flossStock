@@ -77,7 +77,6 @@ export async function POST(event) {
       const colorId = String(it?.color_id ?? it?.colorId ?? it?.id ?? '').trim();
       if (!colorId) throw new Error('color_id required');
 
-
       const rawQty = it.desired_qty ?? it.qty ?? 1;
       const desiredQty = Math.max(1, Math.trunc(Number(rawQty) || 1));
       const notes = typeof it?.notes === 'string' ? it.notes : null;
@@ -87,8 +86,8 @@ export async function POST(event) {
         VALUES (?, ?, ?, ?, unixepoch())
         ON CONFLICT(user_id, color_id)
         DO UPDATE SET
-          desired_qty = excluded.desired_qty,
-          notes       = excluded.notes
+          desired_qty = wishlist.desired_qty + excluded.desired_qty,
+          notes       = COALESCE(excluded.notes, wishlist.notes)
       `).bind(user.id, colorId, desiredQty, notes).run();
     }
 
@@ -104,16 +103,23 @@ export async function POST(event) {
   }
 }
 
+
 /** DELETE /api/wishlist/:color_id */
 export async function DELETE(event) {
-  const { platform, params, locals, cookies } = event;
+  const { platform, params, locals, cookies, request } = event;
 
   try {
     const user = await requireUser({ locals, platform, cookies });
     const db = platform?.env?.DB;
     if (!db) throw new Error('D1 binding missing');
 
-    const colorId = String(params.color_id ?? '').trim();
+    // Try URL param first, then JSON body
+    let colorId = String(params.color_id ?? '').trim();
+    if (!colorId) {
+      const body = await request.json().catch(() => ({}));
+      colorId = String(body?.color_id ?? '').trim();
+    }
+
     if (!colorId) throw new Error('color_id required');
 
     await db.prepare(`
@@ -132,3 +138,4 @@ export async function DELETE(event) {
     return json({ ok: false, error: msg, message: msg }, { status });
   }
 }
+

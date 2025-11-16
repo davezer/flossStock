@@ -128,3 +128,20 @@ SELECT
   COALESCE(SUM(w.desired_qty), 0) AS total_desired
 FROM wishlist w
 GROUP BY w.user_id;
+
+-- ========== Projects ==========
+
+CREATE TABLE IF NOT EXISTS project (
+  id TEXT PRIMARY KEY,                              -- "proj:<uuid>"
+  user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  pdf_path TEXT NOT NULL,                           -- R2 object key
+  cover_path TEXT,                                  -- optional thumbnail
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS project_color (
+  project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+  color_id TEXT NOT NULL REFERENCES color(id) ON DELETE CASCADE,
+  PRIMARY KEY (project_id, color_id)
+);

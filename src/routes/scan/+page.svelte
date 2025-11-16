@@ -186,34 +186,36 @@
   async function addMissingToShoppingList() {
   if (!result?.missing?.length) return;
 
-  const colorIds = result.missing
-    .map((c) => c.color_id || c.id || c.colorId) // be defensive
+  const items = result.missing
+    .map((c) => {
+      const colorId = c.color_id || c.id || c.colorId;
+      if (!colorId) return null;
+      return { color_id: colorId, desired_qty: 1 };
+    })
     .filter(Boolean);
 
-  if (!colorIds.length) {
+  if (!items.length) {
     error = 'No color IDs available to add.';
     return;
   }
 
   addingShopping = true;
   error = '';
-  status = `Adding ${colorIds.length} colors to your shopping list…`;
+  status = `Adding ${items.length} colors to your shopping list…`;
 
   try {
-    for (const colorId of colorIds) {
-      const res = await fetch('/api/wishlist', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ color_id: colorId }) // 👈 singular
-      });
+    const res = await fetch('/api/wishlist', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
 
-      const j = await res.json();
-      if (!res.ok || !j.ok) {
-        throw new Error(j?.message || `HTTP ${res.status}`);
-      }
+    const j = await res.json();
+    if (!res.ok || !j.ok) {
+      throw new Error(j?.message || `HTTP ${res.status}`);
     }
 
-    status = `Added ${colorIds.length} color${colorIds.length === 1 ? '' : 's'} to your shopping list.`;
+    status = `Added ${items.length} color${items.length === 1 ? '' : 's'} to your shopping list.`;
   } catch (e) {
     console.error('addMissingToShoppingList error', e);
     error = e?.message || 'Failed to add to shopping list. Are you signed in?';
@@ -221,6 +223,7 @@
     addingShopping = false;
   }
 }
+
 
 
 
