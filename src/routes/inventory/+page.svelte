@@ -674,7 +674,7 @@
   .subtitle {
     margin: 4px 0 0;
     font-size: 0.9rem;
-    color: var(--text-2, color-mix(in oklab, CanvasText 70%, transparent));
+    color: var(--text, color-mix(in oklab, CanvasText 70%, transparent));
   }
 
   .view-toggle {
